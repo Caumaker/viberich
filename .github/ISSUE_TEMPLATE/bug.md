@@ -11,6 +11,6 @@ labels: bug
 1.
 2.
 
-**Environment** (OS, browser and version, Node version, Vibe Rich UI version from `vibe-ui version`)
+**Environment** (OS, browser and version, Node version, Viberich version from `viberich version`)
 
 **Server output or browser console errors**, if any

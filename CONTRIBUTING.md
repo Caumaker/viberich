@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. Vibe Rich UI is small on purpose: one server and CLI file (`bin/vibe-ui`), one page (`bin/vibe-ui.html`), one MCP wrapper (`bin/vibe-ui-mcp`), no runtime dependencies. Please keep it that way.
+Thanks for helping. Viberich is small on purpose: one server and CLI file (`bin/viberich`), one page (`bin/viberich.html`), one MCP wrapper (`bin/viberich-mcp`), no runtime dependencies. Please keep it that way.
 
 ## How work flows
 

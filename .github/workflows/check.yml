@@ -10,11 +10,12 @@ jobs:
       - run: npm run check
       - name: CLI and MCP smoke test
         run: |
-          export VIBE_UI_DIR=$RUNNER_TEMP/docs
-          node bin/vibe-ui publish demo examples/demo.md
-          node bin/vibe-ui blocks demo
-          node bin/vibe-ui choices demo
-          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | node bin/vibe-ui-mcp > "$RUNNER_TEMP/mcp.txt"
+          export VIBERICH_DIR=$RUNNER_TEMP/docs
+          node bin/viberich publish demo examples/demo.md
+          node bin/viberich stage demo @examples/demo-stage-2.md
+          node bin/viberich blocks demo | grep -q '(stage 2)'
+          node bin/viberich choices demo
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | node bin/viberich-mcp > "$RUNNER_TEMP/mcp.txt"
           grep -q '"name":"publish"' "$RUNNER_TEMP/mcp.txt"
   e2e:
     runs-on: ubuntu-latest

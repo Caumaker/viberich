@@ -4,7 +4,7 @@
 //
 //   npm install && npm test
 //
-// Environment: CHROME (path to Chrome or Chromium; a default is picked per platform), VIBE_UI_PORT (default 7799).
+// Environment: CHROME (path to Chrome or Chromium; a default is picked per platform), VIBERICH_PORT (default 7799).
 'use strict';
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), assert = require('assert');
@@ -16,10 +16,10 @@ const CHROME = process.env.CHROME || {
   win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 }[process.platform] || '/usr/bin/google-chrome';
 
-const ROOT = path.join(__dirname, '..'); const CLI = path.join(ROOT, 'bin', 'vibe-ui');
-const PORT = Number(process.env.VIBE_UI_PORT) || 7799;
-const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-ui-test-'));
-const env = { ...process.env, VIBE_UI_DIR: DIR, VIBE_UI_PORT: String(PORT) };
+const ROOT = path.join(__dirname, '..'); const CLI = path.join(ROOT, 'bin', 'viberich');
+const PORT = Number(process.env.VIBERICH_PORT) || 7799;
+const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'viberich-test-'));
+const env = { ...process.env, VIBERICH_DIR: DIR, VIBERICH_PORT: String(PORT) };
 const BASE = `http://localhost:${PORT}`;
 const cli = (...a) => execFileSync(process.execPath, [CLI, ...a], { env, encoding: 'utf8' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +37,7 @@ async function step(name, fn) {
 }
 
 (async () => {
-  if (await raw('/').then(() => true, () => false)) { console.error(`port ${PORT} is busy; set VIBE_UI_PORT to a free port`); process.exit(1); }
+  if (await raw('/').then(() => true, () => false)) { console.error(`port ${PORT} is busy; set VIBERICH_PORT to a free port`); process.exit(1); }
   cli('publish', 'demo', path.join(ROOT, 'examples', 'demo.md'));
   const server = spawn(process.execPath, [CLI, 'serve'], { env, stdio: 'ignore' });
   let browser;
@@ -45,7 +45,7 @@ async function step(name, fn) {
     await until(() => raw('/').then((s) => s === 200), 'the server');
     browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--window-size=1400,1000', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])] });
     const page = await browser.newPage(); await page.setViewport({ width: 1400, height: 1000 });
-    const pageErrors = []; page.on('pageerror', (e) => pageErrors.push(e.message));
+    const pageErrors = []; page.on('pageerror', (e) => pageErrors.push(e.message + ' @ ' + String(e.stack || '').split('\n')[1]));
     await page.goto(`${BASE}/demo`); await page.waitForSelector('.card');
     const ids = await page.evaluate(() => ({
       choice: DOC.blocks.filter((b) => b.type === 'choice').map((b) => b.id),
@@ -139,7 +139,7 @@ async function step(name, fn) {
 
     await step('queue mode: nothing leaves until Send (Ctrl+Shift+Enter)', async () => {
       await page.click('#sendNow');
-      assert.strictEqual(await page.evaluate(() => localStorage.getItem('vibe-ui-send-now')), '0');
+      assert.strictEqual(await page.evaluate(() => localStorage.getItem('viberich-send-now')), '0');
       await page.click(`.blk[data-b="${q2}"] .opt:nth-child(3)`); await sleep(300);
       assert.ok(await page.$(`.card.queued .blk[data-b="${q2}"]`), 'the card is marked as queued');
       await page.evaluate((id) => caretAt(id, 0), ids.next);
@@ -187,7 +187,59 @@ async function step(name, fn) {
       assert.strictEqual(await raw('/view?p=' + encodeURIComponent('/etc/hosts')), 404);
     });
 
-    await step('no JavaScript errors on the page', async () => { assert.deepStrictEqual(pageErrors, []); });
+    // ----- stages as tabs, on a second document so the steps above stay independent -----
+    cli('publish', 'stages', path.join(ROOT, 'examples', 'demo.md'));
+    const apiS = (u) => fetch(`${BASE}/api/stages/${u}`).then((r) => r.json());
+    let sids;
+    await step('stages: a new stage opens as the newest tab and carries over what is still open', async () => {
+      await page.evaluate(() => localStorage.setItem('viberich-send-now', '1')); // the previous steps left the queue mode on
+      await page.goto(`${BASE}/stages`); await page.waitForSelector('.card');
+      assert.strictEqual(await page.$eval('#tabs', (e) => e.style.display), 'none', 'no tabs before the first stage');
+      sids = await page.evaluate(() => ({ context: DOC.blocks.find((b) => b.html.startsWith('<p>The app stores')).id, q: DOC.blocks.filter((b) => b.type === 'choice').map((b) => b.id) }));
+      await page.evaluate((id) => post('/comment', { block: id, selection: 'The app', segments: [{ block: id, text: 'The app' }], text: 'Is 200 the target?' }), sids.context);
+      const c = await until(async () => (await apiS('comments')).find((x) => x.selection === 'The app'), 'the comment');
+      cli('reply', c.id, 'Yes, 200 paying customers.');
+      await page.click(`.blk[data-b="${sids.q[0]}"] .opt:nth-child(2)`);
+      await until(async () => (await apiS('choices'))[sids.q[0]], 'the D1 tick');
+      assert.match(cli('stage', 'stages', '@' + path.join(ROOT, 'examples', 'demo-stage-2.md')), /stage 2 created: Migration plan \(\d+ blocks\)/);
+      await page.waitForFunction(() => document.querySelectorAll('#tabs .tab').length === 2, { timeout: 8000 });
+      const s = await page.evaluate((ctx) => ({
+        active: ($('#tabs .tab.on') || { dataset: {} }).dataset.i, titles: [...document.querySelectorAll('#tabs .tab .t')].map((t) => t.textContent),
+        badges: [...document.querySelectorAll('#tabs .tab')].map((t) => (t.querySelector('.n') || {}).textContent || ''),
+        open: ($('.open-earlier') || {}).textContent || '', carried: [...document.querySelectorAll('#doc .blk[data-from="0"]')].map((b) => b.dataset.t),
+        tags: [...document.querySelectorAll('.from-stage')].map((t) => t.textContent), cards: document.querySelectorAll('.card').length,
+        contextShown: !!document.querySelector('.blk[data-b="' + ctx + '"]'),
+      }), sids.context);
+      assert.strictEqual(s.active, '1', 'the newest tab is active');
+      assert.deepStrictEqual(s.titles, ['1. Pick a database for a small SaaS', '2. Migration plan']);
+      assert.deepStrictEqual(s.badges, ['3', '1'], 'badge = unanswered choices + threads waiting for the user');
+      assert.match(s.open, /Open from earlier stages/); assert.match(s.open, /2 unanswered decisions/); assert.match(s.open, /Claude's answer is waiting for you/);
+      assert.deepStrictEqual(s.carried, ['h3', 'choice', 'h3', 'choice'], 'open questions come back with their heading');
+      assert.deepStrictEqual(s.tags, ['from stage 1', 'from stage 1']);
+      assert.strictEqual(s.cards, 3); assert.ok(!s.contextShown, 'answered stage-1 content stays in its tab');
+    });
+
+    await step('stages: [ and ] switch tabs, and a link to an earlier thread opens its tab', async () => {
+      await page.evaluate(() => document.activeElement && document.activeElement.blur());
+      await page.keyboard.press('[');
+      await page.waitForFunction((ctx) => ($('#tabs .tab.on') || { dataset: {} }).dataset.i === '0' && !!document.querySelector('.blk[data-b="' + ctx + '"]'), { timeout: 3000 }, sids.context);
+      await page.keyboard.press(']');
+      await page.waitForFunction(() => ($('#tabs .tab.on') || { dataset: {} }).dataset.i === '1', { timeout: 3000 });
+      await page.click('.open-earlier a');
+      await page.waitForFunction((ctx) => ($('#tabs .tab.on') || { dataset: {} }).dataset.i === '0' && document.querySelector('.blk.focus[data-b="' + ctx + '"]'), { timeout: 3000 }, sids.context);
+    });
+
+    await step('stages: the first visit opens the newest tab; insert stays in its stage', async () => {
+      const ctx = await browser.createBrowserContext(); const fresh = await ctx.newPage();
+      await fresh.goto(`${BASE}/stages`); await fresh.waitForSelector('#tabs .tab.on');
+      assert.strictEqual(await fresh.$eval('#tabs .tab.on', (t) => t.dataset.i), '1'); await ctx.close();
+      const doc = await apiS('doc'); const para = doc.blocks.find((b) => b.r === 1 && b.type === 'p');
+      cli('insert', 'stages', para.id, 'Freeze schema changes during the switch.');
+      const added = (await apiS('doc')).blocks.find((b) => b.html.includes('Freeze schema'));
+      assert.strictEqual(added.r, 1); assert.match(cli('blocks', 'stages'), /\(stage 2\)/);
+    });
+
+    await step('no JavaScript errors on the page', async () => { assert.ok(!pageErrors.length, pageErrors.join(' / ')); });
   } finally {
     if (browser) await browser.close();
     server.kill();

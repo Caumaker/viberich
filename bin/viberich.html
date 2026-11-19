@@ -69,8 +69,15 @@ ins{background:#d9f2e2;text-decoration:none}del{background:#fbe0dc;color:#8a2c1c
 .approve-end{display:flex;justify-content:flex-end;margin:-8px -8px 26px}.approve-end button{border:0;border-radius:10px;padding:9px 16px;font:600 14px Inter;cursor:pointer;background:var(--ok);color:#fff;box-shadow:0 2px 8px rgba(47,125,79,.25)}
 .thread.queued{border-style:dashed;border-color:#e9c46a;background:#fffdf5}.thread.queued .tag{font:600 11.5px Inter;color:#9a6b00}.thread.queued button{float:right;border:0;background:none;color:var(--mu);font-size:16px;cursor:pointer}
 @media(max-width:700px){.topbar{margin:-14px -6px 18px}}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;width:100%;border-bottom:1px solid var(--bd);margin:-2px 0 4px;padding-bottom:8px}
+.topbar .tab{border:1px solid var(--bd);background:#f8f7f3;border-radius:9px;padding:5px 11px;font:600 12.5px Inter;color:var(--mu);cursor:pointer;display:flex;gap:6px;align-items:center;max-width:260px}
+.topbar .tab span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.topbar .tab.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.topbar .tab .n{background:#f2b632;color:#3a2a00;border-radius:10px;padding:0 6px;font-size:11px}.topbar .tab.new:not(.on){border-color:var(--ok);color:var(--ok)}
+.open-earlier{border:1px dashed #e9c46a;background:#fffdf5;border-radius:12px;padding:12px 16px;margin:0 -8px 18px;font-size:14px;color:#6b5200}
+.open-earlier b{display:block;margin-bottom:4px;color:#3a2a00}.open-earlier a{color:var(--ac);cursor:pointer;text-decoration:underline;display:block;margin:2px 0}
+.from-stage{font:600 11px Inter;color:#9a6b00;margin-left:6px}
 </style></head><body>
-<div class="layout"><main class="paper"><div class="topbar" id="topbar"><label title="Unchecked: choices, comments and replies wait in a queue until you click Send"><input type="checkbox" id="sendNow"> Send instantly</label><span class="spacer"></span><button class="ghost" id="openFolder" title="Show the source .md in your file manager">Open folder</button><button class="ghost" id="copyMd" title="Copy the whole document as markdown">Copy .md</button><button class="approve" id="approve" title="Send every unanswered decision with the option ticked now (the recommended one if you did not touch it)">Approve decisions</button><button class="send" id="send">Send</button></div><div id="doc"></div></main>
+<div class="layout"><main class="paper"><div class="topbar" id="topbar"><div class="tabs" id="tabs"></div><label title="Unchecked: choices, comments and replies wait in a queue until you click Send"><input type="checkbox" id="sendNow"> Send instantly</label><span class="spacer"></span><button class="ghost" id="openFolder" title="Show the source .md in your file manager">Open folder</button><button class="ghost" id="copyMd" title="Copy the whole document as markdown">Copy .md</button><button class="approve" id="approve" title="Send every unanswered decision with the option ticked now (the recommended one if you did not touch it)">Approve decisions</button><button class="send" id="send">Send</button></div><div id="doc"></div></main>
 <aside class="sidebar"><div class="side-title"><span><span class="live" id="live"></span><span id="count">Comments</span><button class="keys-btn" onclick="showShortcuts()" title="Keyboard shortcuts (?)">Shortcuts</button></span><span style="font-weight:400;font-size:12.5px" id="countResolved"></span></div><div id="threads"></div></aside></div>
 <div id="commentSel">Comment selection</div><div id="modal"><div class="box" id="modalBox"></div></div>
 <script>
@@ -101,25 +108,26 @@ function bubbleMd(h){
 async function copyLink(e,el){e.stopPropagation();e.preventDefault();const u=el.dataset.u;if(e.metaKey||e.ctrlKey||e.button===1){window.open(/^https?:/.test(u)?u:'/view?p='+encodeURIComponent(u),'_blank');return}try{await navigator.clipboard.writeText(u)}catch(_){const ta=document.createElement('textarea');ta.value=u;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}el.classList.add('ok');setTimeout(()=>el.classList.remove('ok'),1200)}
 document.addEventListener('auxclick',e=>{const el=e.target.closest&&e.target.closest('.lk');if(el&&e.button===1)copyLink(e,el)});
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-async function load(){const [d,c,ch]=await Promise.all([api('/doc'),api('/comments'),api('/choices')]);CHOICES=ch||{};const changed=[];d.blocks.forEach(b=>{if(versions[b.id]&&versions[b.id]!==b.v)changed.push(b.id);versions[b.id]=b.v});DOC=d;THREADS=c;$('#openFolder').style.display=d.source?'':'none';draw(changed)}
-function draw(changed){if(editing)return;const pos=saveCaret();const doc=$('#doc');doc.innerHTML='';DOC.blocks.forEach(b=>{const el=document.createElement('div');el.className='blk';el.dataset.b=b.id;el.dataset.t=b.type;el.innerHTML=b.html+'<span contenteditable="false" class="vb'+(b.v>1?' changed':'')+'" title="version '+b.v+' · '+fmtTime(b.at)+' · '+(b.author==='user'?'you':'Claude')+'">v'+b.v+'</span><div class="tools" contenteditable="false"><button tabindex="-1" data-a="c">Comment</button><button tabindex="-1" data-a="h">History</button></div>';if(changed.includes(b.id))el.classList.add('fresh');doc.appendChild(el)});
+const FRESH={};// block id -> when its new version arrived (the green flash keeps going through redraws)
+async function load(){const [d,c,ch]=await Promise.all([api('/doc'),api('/comments'),api('/choices')]);CHOICES=ch||{};const changed=[];d.blocks.forEach(b=>{if(versions[b.id]&&versions[b.id]!==b.v){changed.push(b.id);FRESH[b.id]=Date.now()}versions[b.id]=b.v});DOC=d;THREADS=c;checkTabs();$('#openFolder').style.display=d.source?'':'none';draw(changed)}
+function draw(changed){if(editing)return;const pos=saveCaret();const doc=$('#doc');doc.innerHTML='';const VIS=visibleBlocks();if(VIS.open)doc.appendChild(VIS.open);VIS.list.forEach(b=>{const el=document.createElement('div');el.className='blk';el.dataset.b=b.id;el.dataset.t=b.type;el.innerHTML=b.html+'<span contenteditable="false" class="vb'+(b.v>1?' changed':'')+'" title="version '+b.v+' · '+fmtTime(b.at)+' · '+(b.author==='user'?'you':'Claude')+'">v'+b.v+'</span><div class="tools" contenteditable="false"><button tabindex="-1" data-a="c">Comment</button><button tabindex="-1" data-a="h">History</button></div>';const age=Date.now()-(FRESH[b.id]||0);if(changed.includes(b.id)||age<2400){el.classList.add('fresh');el.style.animationDelay=(changed.includes(b.id)?0:-age)+'ms'}if(b.r!==TAB)el.dataset.from=b.r;doc.appendChild(el)});
  doc.querySelectorAll('.tools button').forEach(bt=>bt.onclick=e=>{e.stopPropagation();const id=bt.closest('.blk').dataset.b;bt.dataset.a==='c'?startComment(id,'',[]):showHistory(id)});
  doc.querySelectorAll('.blk').forEach(el=>el.ondblclick=()=>editBlock(el.dataset.b));
- renderFigures();cards();approveAtEnd();sidebar();highlights();updateBar();restoreCaret(pos)}
+ renderFigures();cards();approveAtEnd();sidebar();highlights();updateBar();drawTabs();restoreCaret(pos)}
 function renderFigures(){document.querySelectorAll('canvas[data-chart]').forEach(cv=>{try{new Chart(cv,JSON.parse(cv.dataset.chart))}catch(e){}});if(window.mermaid){try{mermaid.initialize({startOnLoad:false,theme:'neutral'});mermaid.run({querySelector:'.mermaid'})}catch(e){}}}
 function textOf(el){const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest('.tools,.vb')?2:1});let n,s='';const ns=[];while((n=w.nextNode())){ns.push({n,i:s.length});s+=n.nodeValue}return{s,ns}}
 function highlights(){THREADS.filter(c=>!c.resolved).forEach(c=>(c.segments||[]).forEach(sg=>{const el=document.querySelector('.blk[data-b="'+sg.block+'"]');if(!el)return;const {s,ns}=textOf(el);const k=s.indexOf(sg.text);if(k<0)return;const f=k+sg.text.length;ns.forEach(({n,i})=>{const a=Math.max(k,i),b=Math.min(f,i+n.nodeValue.length);if(a>=b)return;const r=document.createRange();r.setStart(n,a-i);r.setEnd(n,b-i);const m=document.createElement('mark');m.className='sel';m.onclick=e=>{e.stopPropagation();active=c.id;sidebar()};try{r.surroundContents(m)}catch(e){}})}));
  document.querySelectorAll('.blk').forEach(el=>el.classList.toggle('has',THREADS.some(c=>!c.resolved&&c.block===el.dataset.b)))}
 document.addEventListener('mouseup',e=>{const bo=$('#commentSel');if(bo.contains(e.target)||editing)return;setTimeout(()=>{const s=getSelection(),t=s.toString().trim();if(!t||!s.rangeCount){bo.style.display='none';return}const r=s.getRangeAt(0),segs=segmentsOf(r);if(!segs.length){bo.style.display='none';return}const rs=r.getClientRects(),last=rs[rs.length-1]||r.getBoundingClientRect();bo.style.left=Math.min(last.right+scrollX+8,scrollX+document.documentElement.clientWidth-180)+'px';bo.style.top=(last.bottom+scrollY+6)+'px';bo.style.display='block';bo.onclick=()=>{bo.style.display='none';returnTo=endOf(r);getSelection().removeAllRanges();startComment(segs[0].block,segs.map(x=>x.text).join(' … ').slice(0,1500),segs)}},10)});
 function startComment(b,selection,segs){target={b,selection,segs};active=null;sidebar();focusBlock(b);const ta=$('#newText');ta&&ta.focus()}
-function focusBlock(b){document.querySelectorAll('.blk.focus').forEach(x=>x.classList.remove('focus'));const el=document.querySelector('.blk[data-b="'+b+'"]');if(el){el.classList.add('focus');el.scrollIntoView({block:'center',behavior:'smooth'})}}
+function focusBlock(b){const bb=DOC.blocks.find(x=>x.id===b);if(bb&&!document.querySelector('.blk[data-b="'+b+'"]')&&bb.r!==TAB){goToTab(bb.r);setTimeout(()=>focusBlock(b),80);return}document.querySelectorAll('.blk.focus').forEach(x=>x.classList.remove('focus'));const el=document.querySelector('.blk[data-b="'+b+'"]');if(el){el.classList.add('focus');el.scrollIntoView({block:'center',behavior:'smooth'})}}
 async function sendComment(){const t=$('#newText').value.trim();if(!t&&!attachments.length)return;await submit('/comment',{block:target.b,selection:target.selection,segments:target.segs,blockV:versions[target.b],text:t,attachments,quote});attachments=[];quote=null;target=null;const o=readDrafts();delete o.newText;delete o.__target;writeDrafts(o);await load();returnCaret()}
 async function sendReply(id){const ta=document.getElementById('r-'+id),t=ta.value.trim();if(!t&&!attachments.length)return;await submit('/reply',{id,text:t,attachments,quote});attachments=[];quote=null;const o=readDrafts();delete o['r-'+id];writeDrafts(o);await load();returnCaret()}
 function showAttachments(){document.querySelectorAll('.previews').forEach(p=>p.innerHTML=attachments.map(a=>'<img src="'+a.url+'">').join(''))}
 document.addEventListener('paste',async e=>{const ta=document.activeElement;if(!ta||!ta.matches('#threads textarea'))return;const its=[...(e.clipboardData||{}).items||[]].filter(i=>i.type.startsWith('image/'));if(!its.length)return;e.preventDefault();for(const it of its){const f=it.getAsFile();const b64=await new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(f)});const r=await post('/attachment',{data:b64});if(r.url)attachments.push(r)}showAttachments()});
 async function setResolved(id,v){await post('/resolve',{id,resolved:v});load()}
 // drafts: everything typed in a comment box is kept in localStorage and survives redraws and reloads
-const DRAFT_KEY='vibe-ui-draft-'+SLUG;function readDrafts(){try{return JSON.parse(localStorage.getItem(DRAFT_KEY)||'{}')}catch(e){return{}}}function writeDrafts(o){try{localStorage.setItem(DRAFT_KEY,JSON.stringify(o))}catch(e){}}
+const DRAFT_KEY='viberich-draft-'+SLUG;function readDrafts(){try{return JSON.parse(localStorage.getItem(DRAFT_KEY)||'{}')}catch(e){return{}}}function writeDrafts(o){try{localStorage.setItem(DRAFT_KEY,JSON.stringify(o))}catch(e){}}
 document.addEventListener('input',e=>{const t=e.target;if(!t.matches||!t.matches('#threads textarea'))return;const o=readDrafts();o[t.id]=t.value;if(t.id==='newText'&&target)o.__target=target;writeDrafts(o)});
 function hasDraft(){return [...document.querySelectorAll('#threads textarea')].some(t=>t.value.trim())||attachments.length>0}
 function sidebar(){const list=[...THREADS.filter(c=>!c.resolved).slice().reverse(),...THREADS.filter(c=>c.resolved).slice().reverse()],withClaude=THREADS.filter(c=>!c.resolved&&lastReal(c).author==='user').length,nRes=THREADS.filter(c=>c.resolved).length;
@@ -140,7 +148,11 @@ $('#modal').onclick=e=>{if(e.target.id==='modal')e.target.style.display='none'};
 // live updates: server-sent events; a redraw waits while the user is typing or has a draft
 let es=null,tick=null;const LIVE=!location.search.includes('static');
 function disconnect(){if(es){es.close();es=null}$('#live').classList.remove('on')}
-function connect(){if(es||document.hidden||!LIVE)return;es=new EventSource('/api/'+SLUG+'/events');es.onopen=()=>$('#live').classList.add('on');es.onmessage=e=>{if(e.data!=='changed')return;if(target||hasDraft()||document.activeElement.matches('textarea')){window.__pending=true;return}load()};if(!tick)tick=setInterval(()=>{if(window.__pending&&!target&&!hasDraft()&&!document.activeElement.matches('textarea')){window.__pending=false;load()}},2000);es.onerror=()=>{disconnect();setTimeout(connect,3000)}}
+let mouseDown=false;addEventListener('mousedown',()=>{mouseDown=true},true);addEventListener('mouseup',()=>{mouseDown=false},true);
+function selecting(){const s=getSelection();return mouseDown||(!!s.rangeCount&&!s.isCollapsed&&$('#doc').contains(s.anchorNode))}
+function typing(){return !!target||hasDraft()||document.activeElement.matches('textarea')}
+// a redraw never runs over a draft or a selection in progress; a selection left alone for 30 s stops holding it
+function connect(){if(es||document.hidden||!LIVE)return;es=new EventSource('/api/'+SLUG+'/events');es.onopen=()=>$('#live').classList.add('on');es.onmessage=e=>{if(e.data!=='changed')return;if(typing()||selecting()){if(!window.__pending)window.__pendingSince=Date.now();window.__pending=true;return}load()};if(!tick)tick=setInterval(()=>{if(window.__pending&&!typing()&&(!selecting()||Date.now()-window.__pendingSince>30000)){window.__pending=false;load()}},2000);es.onerror=()=>{disconnect();setTimeout(connect,3000)}}
 // a hidden tab drops its connection (browsers allow only 6 per host); when it comes back it reconnects and refreshes
 document.addEventListener('visibilitychange',()=>{if(document.hidden)disconnect();else{window.__pending=true;connect()}});
 
@@ -193,7 +205,7 @@ function restoreCaret(p){if(p)caretAt(p.b,p.off)}
 function commentSelection(){const s=getSelection();if(!s.rangeCount)return false;const r=s.getRangeAt(0);
   if(r.collapsed){const b=blockOf(r.startContainer);if(!b)return false;returnTo=endOf(r);startComment(b.dataset.b,'',[]);return true}
   const segs=segmentsOf(r);if(!segs.length)return false;returnTo=endOf(r);$('#commentSel').style.display='none';s.removeAllRanges();startComment(segs[0].block,segs.map(x=>x.text).join(' … ').slice(0,1500),segs);return true}
-function showShortcuts(){const T=[[['Tab','Shift+Tab'],'next / previous: text, choice options, comments'],[['↑','↓','←','→'],'move the caret in the text'],[['Ctrl+↑','Ctrl+↓'],'previous / next block'],[['Shift+arrows','Ctrl+Shift+arrows'],'select by character / by word'],[['Tab'],'with text selected: comment on the selection'],[['Enter'],'in the text: comment on the whole block'],[['Ctrl+Enter'],'send the comment and put the caret on the next line'],[['Ctrl+Shift+Enter'],'send everything in the queue'],[['Esc'],'leave the comment box and go back to the text'],[['Space'],'tick an option (checkbox and switch)'],[['↑','↓'],'in the options: change a single choice'],[['E'],'edit the block under the caret'],[['H'],'history of the block under the caret'],[['?'],'this list']];
+function showShortcuts(){const T=[[['Tab','Shift+Tab'],'next / previous: text, choice options, comments'],[['↑','↓','←','→'],'move the caret in the text'],[['Ctrl+↑','Ctrl+↓'],'previous / next block'],[['Shift+arrows','Ctrl+Shift+arrows'],'select by character / by word'],[['Tab'],'with text selected: comment on the selection'],[['Enter'],'in the text: comment on the whole block'],[['Ctrl+Enter'],'send the comment and put the caret on the next line'],[['Ctrl+Shift+Enter'],'send everything in the queue'],[['Esc'],'leave the comment box and go back to the text'],[['Space'],'tick an option (checkbox and switch)'],[['↑','↓'],'in the options: change a single choice'],[['E'],'edit the block under the caret'],[['H'],'history of the block under the caret'],[['[',']'],'previous / next stage (the tabs at the top)'],[['?'],'this list']];
   $('#modalBox').innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Keyboard</h3><button class="sec" style="border:0;border-radius:8px;padding:7px 12px;cursor:pointer" onclick="$(\'#modal\').style.display=\'none\'">Close</button></div><table class="keys" style="margin-top:12px">'+T.map(t=>'<tr><td>'+t[0].map(k=>'<kbd>'+esc(k)+'</kbd>').join(' ')+'</td><td>'+esc(t[1])+'</td></tr>').join('')+'</table>';$('#modal').style.display='flex'}
 document.addEventListener('keydown',e=>{
   if($('#modal').style.display==='flex'){if(e.key==='Escape'){$('#modal').style.display='none';e.preventDefault()}return}
@@ -214,7 +226,7 @@ document.addEventListener('selectionchange',()=>{if(inText()){const b=blockOf(ge
 prepareText();
 
 // ===== send queue and approve decisions =====
-const QUEUE_KEY='vibe-ui-queue-'+SLUG,SEND_NOW_KEY='vibe-ui-send-now';
+const QUEUE_KEY='viberich-queue-'+SLUG,SEND_NOW_KEY='viberich-send-now';
 function readQueue(){try{return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]')}catch(e){return[]}}
 function writeQueue(Q){try{localStorage.setItem(QUEUE_KEY,JSON.stringify(Q))}catch(e){}}
 function sendNow(){try{return localStorage.getItem(SEND_NOW_KEY)!=='0'}catch(e){return true}}
@@ -237,6 +249,36 @@ function queueHtml(){const Q=readQueue().filter(x=>x.u!=='/choose');if(!Q.length
 $('#sendNow').onchange=e=>{try{localStorage.setItem(SEND_NOW_KEY,e.target.checked?'1':'0')}catch(_){};if(e.target.checked&&readQueue().length)sendQueue();updateBar()};
 $('#send').onclick=sendQueue;$('#approve').onclick=approveAll;
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&e.shiftKey){e.preventDefault();sendQueue()}},true);
+
+// ===== stages as tabs: every new round from Claude is a tab; what is still open in earlier stages shows up again =====
+const TAB_KEY='viberich-tab-'+SLUG,NSTAGES_KEY='viberich-nstages-'+SLUG,SEEN_KEY='viberich-seen-'+SLUG;let TAB=0;try{TAB=Number(localStorage.getItem(TAB_KEY)||0)}catch(e){}
+function nStages(){return (DOC.stages||[]).length}
+// the first visit, and every new stage, opens the newest tab
+function checkTabs(){let before=-1;try{before=Number(localStorage.getItem(NSTAGES_KEY)??-1)}catch(e){}const n=nStages();
+  if(n>before)TAB=n;if(TAB>n)TAB=n;try{localStorage.setItem(NSTAGES_KEY,String(n));localStorage.setItem(TAB_KEY,String(TAB))}catch(e){}}
+function goToTab(i){TAB=i;try{localStorage.setItem(TAB_KEY,String(i))}catch(e){};draw([]);scrollTo({top:0,behavior:'smooth'})}
+function isQueued(id){return readQueue().some(x=>x.u==='/choose'&&x.b.block===id)}
+function openChoicesOf(r){return DOC.blocks.filter(b=>b.r===r&&b.type==='choice'&&!CHOICES[b.id]&&!isQueued(b.id))}
+// threads whose last message is from Claude: the user owes an answer
+function threadsWaitingFor(r){return THREADS.filter(c=>{if(c.resolved)return false;const b=DOC.blocks.find(x=>x.id===c.block);if(!b||b.r!==r)return false;const u=c.messages.filter(m=>m.author!=='system').at(-1);return u&&u.author!=='user'})}
+// a choice list together with its heading (and whatever sits between them), so the card is complete
+function withHeading(b){const L=DOC.blocks.filter(x=>x.r===b.r);const k=L.indexOf(b);const out=[b];for(let i=k-1;i>=0&&k-i<=3;i--){if(L[i].type==='choice')break;out.unshift(L[i]);if(/^h[23]$/.test(L[i].type))return out}return [b]}
+function visibleBlocks(){const list=[];let open=null;
+  if(nStages()){const carried=[];for(let r=0;r<TAB;r++)openChoicesOf(r).forEach(b=>carried.push(...withHeading(b)));
+    const waiting=[];for(let r=0;r<TAB;r++)waiting.push(...threadsWaitingFor(r));
+    if(carried.length||waiting.length){open=document.createElement('div');open.className='open-earlier';open.setAttribute('contenteditable','false');
+      const nq=carried.filter(b=>b.type==='choice').length;
+      open.innerHTML='<b>Open from earlier stages</b>'+(nq?'<div>'+nq+' unanswered decision'+(nq===1?'':'s')+', right below.</div>':'')+waiting.map(c=>'<a data-c="'+c.id+'">'+esc((c.selection||'whole block').slice(0,90))+': Claude\'s answer is waiting for you</a>').join('');
+      open.querySelectorAll('a').forEach(a=>a.onclick=()=>{const c=THREADS.find(x=>x.id===a.dataset.c);active=c.id;focusBlock(c.block);sidebar()})}
+    list.push(...carried)}
+  list.push(...DOC.blocks.filter(b=>(b.r||0)===TAB));return {list,open}}
+function drawTabs(){const el=$('#tabs');const n=nStages();if(!n){el.style.display='none';return}el.style.display='';
+  const names=[DOC.title,...DOC.stages.map(st=>st.title)];let seen=-1;try{seen=Number(localStorage.getItem(SEEN_KEY)??-1)}catch(e){}
+  el.innerHTML=names.map((t,i)=>{const k=openChoicesOf(i).length+threadsWaitingFor(i).length;return '<button class="tab'+(i===TAB?' on':'')+(i===n&&seen<n?' new':'')+'" data-i="'+i+'" title="'+esc(t)+'"><span class="t">'+(i+1)+'. '+esc(t)+'</span>'+(k?'<span class="n">'+k+'</span>':'')+'</button>'}).join('');
+  el.querySelectorAll('.tab').forEach(b=>b.onclick=()=>goToTab(Number(b.dataset.i)));
+  if(TAB===n)try{localStorage.setItem(SEEN_KEY,String(n))}catch(e){}
+  document.querySelectorAll('.blk[data-from]').forEach(x=>{const h=x.querySelector('h2,h3');if(h&&!h.querySelector('.from-stage'))h.insertAdjacentHTML('beforeend','<span class="from-stage" contenteditable="false">from stage '+(Number(x.dataset.from)+1)+'</span>')})}
+document.addEventListener('keydown',e=>{if(!nStages()||e.ctrlKey||e.metaKey||e.altKey)return;const a=document.activeElement;if(a&&a.matches('textarea,input'))return;if(e.key==='['&&TAB>0){e.preventDefault();goToTab(TAB-1)}else if(e.key===']'&&TAB<nStages()){e.preventDefault();goToTab(TAB+1)}});
 
 load().then(()=>{const R=readDrafts();if(R.__target&&R.newText){target=R.__target;sidebar()}connect()});
 </script></body></html>

@@ -1,19 +1,19 @@
 {
-  "name": "vibe-rich-ui",
+  "name": "viberich",
   "version": "0.4.0",
   "description": "Rich interaction UI for vibe coding with Claude Code: comment on passages, tick choices, approve decisions and let Claude answer and edit, live, in a local page.",
   "license": "MIT",
-  "bin": { "vibe-ui": "bin/vibe-ui", "vibe-ui-mcp": "bin/vibe-ui-mcp" },
+  "bin": { "viberich": "bin/viberich", "viberich-mcp": "bin/viberich-mcp" },
   "files": ["bin/", "skill/", "examples/"],
   "engines": { "node": ">=18" },
   "scripts": {
-    "check": "node --check bin/vibe-ui && node --check bin/vibe-ui-mcp && node scripts/check-html.js",
+    "check": "node --check bin/viberich && node --check bin/viberich-mcp && node scripts/check-html.js",
     "test": "npm run check && node test/e2e.test.js",
     "demo": "node scripts/record-demo.js"
   },
   "devDependencies": { "puppeteer-core": "23.11.1" },
-  "repository": { "type": "git", "url": "git+https://github.com/Caumaker/vibe-rich-ui.git" },
-  "homepage": "https://github.com/Caumaker/vibe-rich-ui#readme",
-  "bugs": { "url": "https://github.com/Caumaker/vibe-rich-ui/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/Caumaker/viberich.git" },
+  "homepage": "https://github.com/Caumaker/viberich#readme",
+  "bugs": { "url": "https://github.com/Caumaker/viberich/issues" },
   "keywords": ["claude-code", "vibe-coding", "mcp", "human-in-the-loop", "review", "comments", "markdown", "local-first"]
 }

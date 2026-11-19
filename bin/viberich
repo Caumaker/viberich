@@ -1,32 +1,33 @@
 #!/usr/bin/env node
-// Vibe Rich UI: rich interaction UI for vibe coding with Claude Code.
+// Viberich: rich interaction UI for vibe coding with Claude Code.
 // A local document split into blocks, each with a fixed id and a version history. The user comments on a block or
 // on a selection and ticks choices; Claude answers in the thread and edits blocks, live (server-sent events).
-// Nothing is deleted: remove hides a block, restore creates a new version. Run `vibe-ui help` for the commands.
+// Nothing is deleted: remove hides a block, restore creates a new version. Run `viberich help` for the commands.
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 
 const VERSION = '0.4.0';
-const ROOT = process.env.VIBE_UI_DIR || path.join(os.homedir(), '.vibe-ui', 'docs');
-const PORT = Number(process.env.VIBE_UI_PORT) || 7743;
+const ROOT = process.env.VIBERICH_DIR || path.join(os.homedir(), '.viberich', 'docs');
+const PORT = Number(process.env.VIBERICH_PORT) || 7743;
 const HOME = os.homedir();
-const PAGE_FILE = path.join(__dirname, 'vibe-ui.html');
+const PAGE_FILE = path.join(__dirname, 'viberich.html');
 const MAX_BODY = 25 * 1024 * 1024; // pasted screenshots arrive as data URLs
 
-const USAGE = `vibe-ui ${VERSION}: rich interaction UI for vibe coding with Claude Code
+const USAGE = `viberich ${VERSION}: rich interaction UI for vibe coding with Claude Code
 
-  vibe-ui serve [port]                         start the server on 127.0.0.1 (default 7743 or VIBE_UI_PORT)
-  vibe-ui publish <slug> <file.md> [--force]   create a document from markdown (--force recreates it, dropping history)
-  vibe-ui blocks <slug>                        list the blocks: id, version, start of the text
-  vibe-ui block <slug> <id>                    print the current markdown of a block
-  vibe-ui edit <slug> <id> <@file|text> [--comment <id>] [--reason "..."]          new version of a block
-  vibe-ui insert <slug> <afterId> <@file|text> [--comment <id>] [--reason "..."]   new block after another one
-  vibe-ui remove <slug> <id> [--comment <id>] [--reason "..."]                     hide a block (it stays in history)
-  vibe-ui pending [slug]                       comments waiting for Claude, with the selection and the block text
-  vibe-ui choices <slug>                       what the user ticked in each choice question
-  vibe-ui reply <commentId> <@file|text> [--quote <messageId>]                     answer in a comment thread
-  vibe-ui resolve <commentId>                  mark a thread as resolved
-  vibe-ui wait [seconds]                       return when a new comment or choice arrives (default 3500)
+  viberich serve [port]                         start the server on 127.0.0.1 (default 7743 or VIBERICH_PORT)
+  viberich publish <slug> <file.md> [--force]   create a document from markdown (--force recreates it, dropping history)
+  viberich blocks <slug>                        list the blocks: id, version, start of the text
+  viberich block <slug> <id>                    print the current markdown of a block
+  viberich edit <slug> <id> <@file|text> [--comment <id>] [--reason "..."]          new version of a block
+  viberich insert <slug> <afterId> <@file|text> [--comment <id>] [--reason "..."]   new block after another one (same stage)
+  viberich stage <slug> <@file|text> [--title "..."]                              new stage: a new tab with these blocks
+  viberich remove <slug> <id> [--comment <id>] [--reason "..."]                     hide a block (it stays in history)
+  viberich pending [slug]                       comments waiting for Claude, with the selection and the block text
+  viberich choices <slug>                       what the user ticked in each choice question
+  viberich reply <commentId> <@file|text> [--quote <messageId>]                     answer in a comment thread
+  viberich resolve <commentId>                  mark a thread as resolved
+  viberich wait [seconds]                       return when a new comment or choice arrives (default 3500)
 
 Choices: a list right under a "### question" heading becomes a card the user ticks.
   - ( ) option     single choice (radio)      - (*) pre-selected
@@ -34,7 +35,7 @@ Choices: a list right under a "### question" heading becomes a card the user tic
   - {off} option   on/off switch              - {on} pre-selected
 Every tick reaches the question's thread as a message from the user: it shows in pending and wakes up wait.
 
-Documents are stored in VIBE_UI_DIR (now: ${ROOT}).`;
+Documents are stored in VIBERICH_DIR (now: ${ROOT}).`;
 
 // ---------- storage ----------
 const now = () => new Date().toISOString();
@@ -159,11 +160,14 @@ function choose(slug, blockId, checked) {
   }
   writeComments(slug, C);
 }
+// stages (tabs): d.stages = [{ id, title, at, blocks: [ids] }]; a block outside every stage belongs to stage 0 (the published document)
+const stageOf = (d) => { const m = {}; (d.stages || []).forEach((st, i) => st.blocks.forEach((id) => (m[id] = i + 1))); return m; };
 const view = (slug) => {
-  const d = readDoc(slug);
+  const d = readDoc(slug); const sm = stageOf(d);
   return {
-    title: d.title, source: d.source || '',
-    blocks: d.blocks.filter((b) => !b.hidden).map((b) => { const last = latest(b); return { id: b.id, v: last.v, at: last.at, author: last.author, ...render(last.md) }; }),
+    title: d.title, source: d.source || '', createdAt: d.createdAt,
+    stages: (d.stages || []).map((st) => ({ id: st.id, title: st.title, at: st.at })),
+    blocks: d.blocks.filter((b) => !b.hidden).map((b) => { const last = latest(b); return { id: b.id, v: last.v, at: last.at, author: last.author, r: sm[b.id] || 0, ...render(last.md) }; }),
   };
 };
 
@@ -235,6 +239,7 @@ function serve(port) {
     if (p[0] === 'api' && slugs().includes(p[1])) {
       const s = p[1], route = p[2];
       if (route === 'events') {
+        watch(); // a document published after the server started is watched from its first viewer on
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
         res.write('data: hello\n\n');
         if (!listeners.has(s)) listeners.set(s, new Set());
@@ -302,10 +307,10 @@ function serve(port) {
     }
     if (!p[0]) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      return res.end('<!doctype html><meta charset="utf-8"><title>Vibe Rich UI</title><body style="font:16px Inter,system-ui,sans-serif;padding:40px"><h2>Documents</h2>' + (slugs().map((x) => `<p><a href="/${x}">${esc(readDoc(x).title)}</a></p>`).join('') || '<p>No documents yet. Publish one with <code>vibe-ui publish &lt;slug&gt; &lt;file.md&gt;</code>.</p>'));
+      return res.end('<!doctype html><meta charset="utf-8"><title>Viberich</title><body style="font:16px Inter,system-ui,sans-serif;padding:40px"><h2>Documents</h2>' + (slugs().map((x) => `<p><a href="/${x}">${esc(readDoc(x).title)}</a></p>`).join('') || '<p>No documents yet. Publish one with <code>viberich publish &lt;slug&gt; &lt;file.md&gt;</code>.</p>'));
     }
     res.writeHead(404); res.end('not found');
-  }).listen(port, '127.0.0.1', () => console.log(`vibe-ui ${VERSION} listening on http://localhost:${port}`));
+  }).listen(port, '127.0.0.1', () => console.log(`viberich ${VERSION} listening on http://localhost:${port}`));
 }
 
 // ---------- CLI ----------
@@ -319,7 +324,7 @@ const suffix = () => (opt('reason') ? ': ' + opt('reason') : '');
 
 if (cmd === 'serve') serve(Number(a) || PORT);
 else if (cmd === 'publish') {
-  if (!a || !b) fail('usage: vibe-ui publish <slug> <file.md> [--force]');
+  if (!a || !b) fail('usage: viberich publish <slug> <file.md> [--force]');
   if (!/^[A-Za-z0-9][\w-]*$/.test(a)) fail('the slug may only have letters, digits, - and _');
   if (readDoc(a) && !args.includes('--force')) fail('already exists; use edit or insert, or --force to recreate it');
   const md = fs.readFileSync(b, 'utf8'); fs.mkdirSync(docDir(a), { recursive: true });
@@ -328,7 +333,8 @@ else if (cmd === 'publish') {
   writeDoc(a, d); if (!fs.existsSync(path.join(docDir(a), 'comments.json'))) writeComments(a, []);
   console.log(`published: http://localhost:${PORT}/${a} (${d.blocks.length} blocks)`);
 } else if (cmd === 'blocks') {
-  for (const x of needDoc(a).blocks) console.log(`${x.id}${x.hidden ? ' (hidden)' : ''} v${latest(x).v}  ${latest(x).md.replace(/\s+/g, ' ').slice(0, 90)}`);
+  const d = needDoc(a); const sm = stageOf(d);
+  for (const x of d.blocks) console.log(`${x.id}${x.hidden ? ' (hidden)' : ''}${sm[x.id] ? ` (stage ${sm[x.id] + 1})` : ''} v${latest(x).v}  ${latest(x).md.replace(/\s+/g, ' ').slice(0, 90)}`);
 } else if (cmd === 'block') {
   const x = needDoc(a).blocks.find((y) => y.id === b); console.log(x ? latest(x).md : 'not found');
 } else if (cmd === 'edit') {
@@ -336,10 +342,20 @@ else if (cmd === 'publish') {
   const v = newVersion(blk, content(c), 'claude', opt('reason'), opt('comment')); writeDoc(a, d);
   noteInThread(a, opt('comment'), `Changed the block (version ${v})${suffix()}.`);
   console.log(`block ${b} is now at version ${v}`);
+} else if (cmd === 'stage') {
+  // a new stage: a new tab at the top of the page; what is still open in earlier stages shows up again in it
+  const d = needDoc(a); const parts = split(content(b) || ''); if (!parts.length) fail('usage: viberich stage <slug> <@file|text> [--title "..."]');
+  d.stages = d.stages || [];
+  const title = plain(opt('title') || ((parts[0].match(/^#{1,3} (.*)/) || [])[1]) || 'Stage ' + (d.stages.length + 2));
+  const ids = parts.map((x) => { const blk = { id: newId('b'), versions: [] }; newVersion(blk, x, 'claude', 'new stage'); d.blocks.push(blk); return blk.id; });
+  d.stages.push({ id: newId('s'), title, at: now(), blocks: ids }); writeDoc(a, d);
+  console.log(`stage ${d.stages.length + 1} created: ${title} (${ids.length} blocks)`);
 } else if (cmd === 'insert') {
   const d = needDoc(a); const k = d.blocks.findIndex((y) => y.id === b); if (k < 0) fail('block not found');
   const blk = { id: newId('b'), versions: [] }; newVersion(blk, content(c), 'claude', opt('reason') || 'new block', opt('comment'));
-  d.blocks.splice(k + 1, 0, blk); writeDoc(a, d);
+  d.blocks.splice(k + 1, 0, blk);
+  const st = (d.stages || []).find((x) => x.blocks.includes(b)); if (st) st.blocks.push(blk.id); // stays in the same stage
+  writeDoc(a, d);
   noteInThread(a, opt('comment'), `Inserted a new block${suffix()}.`);
   console.log('inserted', blk.id);
 } else if (cmd === 'remove') {
@@ -366,7 +382,7 @@ else if (cmd === 'publish') {
   }
 } else if (cmd === 'reply') {
   const text = content(args.slice(2).filter((v, i, arr) => v !== '--quote' && arr[i - 1] !== '--quote').join(' '));
-  if (!a || !text || !text.trim()) fail('usage: vibe-ui reply <commentId> <@file|text> [--quote <messageId>]');
+  if (!a || !text || !text.trim()) fail('usage: viberich reply <commentId> <@file|text> [--quote <messageId>]');
   for (const s of slugs()) {
     const C = readComments(s); const x = C.find((y) => y.id === a);
     if (x) { x.messages.push({ id: newId('m'), author: 'claude', text: text.trim(), quote: opt('quote') ? { thread: x.id, msg: opt('quote') } : null, at: now() }); writeComments(s, C); console.log('replied'); process.exit(0); }

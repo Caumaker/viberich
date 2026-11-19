@@ -1,10 +1,10 @@
-// Records docs/demo.gif and the screenshots in docs/ from examples/demo.md.
+// Records docs/demo.gif and the screenshots in docs/ from examples/demo.md and examples/demo-stage-2.md.
 // It starts its own server on a spare port with a temporary data folder, drives the page with puppeteer-core
 // (1280x800), plays Claude's side through the CLI and assembles the frames with ffmpeg.
 //
 //   npm install && npm run demo
 //
-// Environment: CHROME (path to Chrome), FFMPEG (default: ffmpeg on the PATH), VIBE_UI_PORT (default 7798).
+// Environment: CHROME (path to Chrome), FFMPEG (default: ffmpeg on the PATH), VIBERICH_PORT (default 7798).
 'use strict';
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http');
@@ -12,11 +12,11 @@ const puppeteer = require('puppeteer-core');
 
 const CHROME = process.env.CHROME || { darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' }[process.platform] || '/usr/bin/google-chrome';
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
-const ROOT = path.join(__dirname, '..'); const CLI = path.join(ROOT, 'bin', 'vibe-ui'); const OUT = path.join(ROOT, 'docs');
-const PORT = Number(process.env.VIBE_UI_PORT) || 7798;
-const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-ui-demo-'));
+const ROOT = path.join(__dirname, '..'); const CLI = path.join(ROOT, 'bin', 'viberich'); const OUT = path.join(ROOT, 'docs');
+const PORT = Number(process.env.VIBERICH_PORT) || 7798;
+const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'viberich-demo-'));
 const FRAMES = path.join(DIR, 'frames'); fs.mkdirSync(FRAMES);
-const env = { ...process.env, VIBE_UI_DIR: path.join(DIR, 'docs'), VIBE_UI_PORT: String(PORT) };
+const env = { ...process.env, VIBERICH_DIR: path.join(DIR, 'docs'), VIBERICH_PORT: String(PORT) };
 const cli = (...a) => execFileSync(process.execPath, [CLI, ...a], { env, encoding: 'utf8' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const up = () => new Promise((ok) => http.get({ host: '127.0.0.1', port: PORT, path: '/' }, (r) => { r.resume(); ok(true); }).on('error', () => ok(false)));
@@ -29,7 +29,7 @@ addEventListener('mousemove',e=>{c.style.left=(e.clientX-2)+'px';c.style.top=(e.
 addEventListener('mousedown',e=>{const r=document.createElement('div');r.style.cssText='position:fixed;z-index:99998;pointer-events:none;width:30px;height:30px;border-radius:50%;border:3px solid rgba(29,99,166,.6);left:'+(e.clientX-15)+'px;top:'+(e.clientY-15)+'px;transition:transform .45s,opacity .45s';document.documentElement.appendChild(r);requestAnimationFrame(()=>{r.style.transform='scale(1.7)';r.style.opacity='0'});setTimeout(()=>r.remove(),600)},true)})`;
 
 (async () => {
-  if (await up()) throw new Error(`port ${PORT} is busy; set VIBE_UI_PORT`);
+  if (await up()) throw new Error(`port ${PORT} is busy; set VIBERICH_PORT`);
   cli('publish', 'demo', path.join(ROOT, 'examples', 'demo.md'));
   const server = spawn(process.execPath, [CLI, 'serve'], { env, stdio: 'ignore' });
   while (!(await up())) await sleep(100);
@@ -66,28 +66,37 @@ addEventListener('mousedown',e=>{const r=document.createElement('div');r.style.c
     await sleep(1500);
 
     // 2. Claude answers in the thread and edits the block (played through the CLI, as Claude would)
-    const comment = JSON.parse(fs.readFileSync(path.join(env.VIBE_UI_DIR, 'demo', 'comments.json'), 'utf8')).at(-1);
+    const comment = JSON.parse(fs.readFileSync(path.join(env.VIBERICH_DIR, 'demo', 'comments.json'), 'utf8')).at(-1);
     cli('reply', comment.id, 'Fair point. The ORM works the same on Postgres, and the monthly report is a single SQL view I can write. I will reword the sentence.');
     await sleep(2600);
     cli('edit', 'demo', ids.intro, 'Start with managed Postgres: it fits the joins and monthly reports this app needs, and it works with the ORM the team already uses.', '--comment', comment.id, '--reason', 'the team uses an ORM');
     await sleep(3400);
     fs.copyFileSync(frames.at(-1).f, path.join(OUT, 'screenshot-thread.png'));
 
-    // 3. tick choices in the cards and approve the rest
+    // 3. tick two of the three decisions, leaving D1 open
     const cardTop = (blk) => page.evaluate((id) => document.querySelector('.blk[data-b="' + id + '"]').closest('.card').getBoundingClientRect().top + scrollY, blk);
     const pick = async (blk, n, ms) => { const c = await center(`.blk[data-b="${blk}"] .opt:nth-child(${n})`); await clickAt(c.x - 120, c.y, ms); };
     await scrollTo((await cardTop(ids.choice[0])) - 90, 1200); await sleep(900);
-    await pick(ids.choice[1], 4, 900); await sleep(1100);
-    await scrollTo((await cardTop(ids.choice[1])) - 90, 800); await sleep(500);
-    await pick(ids.choice[2], 2, 800); await sleep(1300);
-    const ap = await center('#approve'); await clickAt(ap.x, ap.y, 900); await sleep(1800);
-    await scrollTo((await cardTop(ids.choice[0])) - 90, 900); await sleep(2400);
+    await pick(ids.choice[1], 4, 900); await sleep(1000);
+    await scrollTo((await cardTop(ids.choice[1])) - 90, 800); await sleep(400);
+    await pick(ids.choice[2], 2, 800); await sleep(1100);
+    await glide(803, 430, 500); await scrollTo(0, 1100); await sleep(700);
+
+    // 4. Claude adds the next stage: a new tab opens, and the open decision and the thread waiting for you come along
+    cli('stage', 'demo', '@' + path.join(ROOT, 'examples', 'demo-stage-2.md'));
+    await page.waitForFunction(() => document.querySelectorAll('#tabs .tab').length === 2, { timeout: 10000 }); await sleep(2600);
+    fs.copyFileSync(frames.at(-1).f, path.join(OUT, 'screenshot-stages.png'));
+    const carried = await page.evaluate(() => document.querySelector('.open-earlier').getBoundingClientRect().top + scrollY);
+    await scrollTo(carried - 70, 1300); await sleep(1600);
+    const ap = await center('#approve'); await clickAt(ap.x, ap.y, 900); await sleep(1600);
+    await scrollTo(carried + 260, 1200); await sleep(1400);
+    await page.keyboard.press('['); await sleep(1500);
+    await page.keyboard.press(']'); await sleep(1900);
     recording = false; await grab;
 
-    // screenshots for the README (the pointer is hidden)
+    // screenshot of the history modal (the pointer is hidden)
     await page.evaluate(() => { document.getElementById('demo-pointer').style.display = 'none'; });
-    await page.screenshot({ path: path.join(OUT, 'screenshot-choices.png') });
-    await scrollTo(0, 10); await sleep(300);
+    await page.keyboard.press('['); await sleep(500); await scrollTo(0, 10); await sleep(300);
     await page.evaluate((id) => showHistory(id), ids.intro); await sleep(600);
     await page.screenshot({ path: path.join(OUT, 'screenshot-history.png') });
 

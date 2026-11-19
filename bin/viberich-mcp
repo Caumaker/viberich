@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// vibe-ui-mcp: MCP server (stdio) for Vibe Rich UI, for Claude Code and Claude Desktop.
-// Tools: publish, open, pending, reply, edit, insert, blocks, block, choices. Each one calls the vibe-ui CLI next to this file.
+// viberich-mcp: MCP server (stdio) for Viberich, for Claude Code and Claude Desktop.
+// Tools: publish, open, pending, reply, edit, insert, stage, blocks, block, choices. Each one calls the viberich CLI next to this file.
 'use strict';
 const { execFileSync } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');
-const CLI = path.join(__dirname, 'vibe-ui');
-const PORT = Number(process.env.VIBE_UI_PORT) || 7743;
+const CLI = path.join(__dirname, 'viberich');
+const PORT = Number(process.env.VIBERICH_PORT) || 7743;
 const openUrl = (u) => {
   if (process.platform === 'darwin') execFileSync('open', [u]);
   else if (process.platform === 'win32') execFileSync('cmd', ['/c', 'start', '', u]);
@@ -13,15 +13,16 @@ const openUrl = (u) => {
 const run = (args) => { try { return execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', timeout: 20000 }); } catch (e) { return 'ERROR: ' + (((e.stdout || '') + (e.stderr || '')).trim() || e.message); } };
 // long text goes through a temporary file, so quotes and newlines survive intact
 const withTempFile = (text, fn) => {
-  const f = path.join(os.tmpdir(), 'vibe-ui-' + Date.now() + Math.random().toString(36).slice(2, 6) + '.md');
+  const f = path.join(os.tmpdir(), 'viberich-' + Date.now() + Math.random().toString(36).slice(2, 6) + '.md');
   fs.writeFileSync(f, text);
   try { return fn(f); } finally { try { fs.unlinkSync(f); } catch (e) { /* already gone */ } }
 };
-const INSTRUCTIONS = 'Vibe Rich UI: publish every long answer (report, plan, analysis, comparison, answer with tables or decisions) as a local commentable document instead of a wall of text in the terminal or a throwaway HTML page. '
+const INSTRUCTIONS = 'Viberich: publish every long answer (report, plan, analysis, comparison, answer with tables or decisions) as a local commentable document instead of a wall of text in the terminal or a throwaway HTML page. '
   + 'Write markdown (# and ## headings, paragraphs, lists, tables, > callouts, ```chart with a Chart.js config in JSON, ```mermaid, raw <svg>), call `publish`, then `open`. '
   + 'The user selects passages and comments; read them with `pending`, answer with `reply`, and when a change is asked, `edit` the block citing the comment (each edit becomes a version in the block history). '
   + 'A question with options becomes a card the user ticks: right under a `### question` heading write `- ( )` for a single choice, `- [ ]` for multiple choice, `- {off}` for an on/off switch (`(*)`, `[x]` and `{on}` are pre-selected: use them for your recommendation). '
-  + 'What the user ticks arrives in `pending` and in `choices`. Never resolve a thread yourself: the user does.';
+  + 'What the user ticks arrives in `pending` and in `choices`. For the next round of the same work (a follow-up plan, the next step), use `stage`: it adds a new tab to the same document, and decisions and threads still open in earlier stages show up again at the top of it. '
+  + 'Never resolve a thread yourself: the user does.';
 const str = { type: 'string' };
 const TOOLS = [
   { name: 'publish', description: 'Publish a new document from markdown and return its local link. Use a short slug with no spaces.', inputSchema: { type: 'object', properties: { slug: str, markdown: str, force: { type: 'boolean', description: 'recreate it if it already exists (drops the version history; only when the user asks)' } }, required: ['slug', 'markdown'] } },
@@ -30,6 +31,7 @@ const TOOLS = [
   { name: 'reply', description: 'Answer in the thread of a comment. Light markdown renders in the bubble.', inputSchema: { type: 'object', properties: { comment: str, text: str, quote: { type: 'string', description: 'id of a message in the same thread to quote' } }, required: ['comment', 'text'] } },
   { name: 'edit', description: 'New version of a block (the markdown of the whole block). Pass the comment that asked for it.', inputSchema: { type: 'object', properties: { slug: str, block: str, markdown: str, comment: str, reason: str }, required: ['slug', 'block', 'markdown'] } },
   { name: 'insert', description: 'Insert a new block after another one.', inputSchema: { type: 'object', properties: { slug: str, afterBlock: str, markdown: str, comment: str, reason: str }, required: ['slug', 'afterBlock', 'markdown'] } },
+  { name: 'stage', description: 'Add a new stage to a document: a new tab with these blocks. Open decisions and threads from earlier stages reappear at the top of it.', inputSchema: { type: 'object', properties: { slug: str, markdown: str, title: { type: 'string', description: 'tab title (default: the first heading of the markdown)' } }, required: ['slug', 'markdown'] } },
   { name: 'blocks', description: 'List the blocks of a document (id, version, start of the text).', inputSchema: { type: 'object', properties: { slug: str }, required: ['slug'] } },
   { name: 'block', description: 'Current markdown of one block.', inputSchema: { type: 'object', properties: { slug: str, block: str }, required: ['slug', 'block'] } },
   { name: 'choices', description: 'What the user ticked in each choice question of the document (radio, checkbox, switch).', inputSchema: { type: 'object', properties: { slug: str }, required: ['slug'] } },
@@ -37,7 +39,7 @@ const TOOLS = [
 function call(name, a) {
   const extra = (k) => (a[k] ? ['--' + k, a[k]] : []);
   if (name === 'publish') { // this file stays: it is the document's source, shown by "Open folder"
-    const f = path.join(os.tmpdir(), 'vibe-ui-' + String(a.slug).replace(/[^\w-]/g, '') + '-' + Date.now() + '.md'); fs.writeFileSync(f, a.markdown);
+    const f = path.join(os.tmpdir(), 'viberich-' + String(a.slug).replace(/[^\w-]/g, '') + '-' + Date.now() + '.md'); fs.writeFileSync(f, a.markdown);
     return run(['publish', a.slug, f, ...(a.force ? ['--force'] : [])]);
   }
   if (name === 'open') { const u = 'http://localhost:' + PORT + '/' + a.slug; openUrl(u); return 'opened: ' + u; }
@@ -45,6 +47,7 @@ function call(name, a) {
   if (name === 'reply') return withTempFile(a.text, (f) => run(['reply', a.comment, '@' + f, ...extra('quote')]));
   if (name === 'edit') return withTempFile(a.markdown, (f) => run(['edit', a.slug, a.block, '@' + f, ...extra('comment'), ...extra('reason')]));
   if (name === 'insert') return withTempFile(a.markdown, (f) => run(['insert', a.slug, a.afterBlock, '@' + f, ...extra('comment'), ...extra('reason')]));
+  if (name === 'stage') return withTempFile(a.markdown, (f) => run(['stage', a.slug, '@' + f, ...extra('title')]));
   if (name === 'blocks') return run(['blocks', a.slug]);
   if (name === 'block') return run(['block', a.slug, a.block]);
   if (name === 'choices') return run(['choices', a.slug]);
@@ -54,7 +57,7 @@ let buf = '';
 process.stdin.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l.trim()) handle(JSON.parse(l)); } });
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 function handle(m) {
-  if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'vibe-ui', version: '0.4.0' }, instructions: INSTRUCTIONS } });
+  if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'viberich', version: '0.4.0' }, instructions: INSTRUCTIONS } });
   if (m.method === 'tools/list') return send({ jsonrpc: '2.0', id: m.id, result: { tools: TOOLS } });
   if (m.method === 'tools/call') {
     let out; try { out = call(m.params.name, m.params.arguments || {}); } catch (e) { out = 'ERROR: ' + e.message; }
