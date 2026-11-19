@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// replica-mcp: servidor MCP (stdio) do "replica" para o app do Claude (Claude Desktop) e o Claude Code.
+// Ferramentas: publicar, pendentes, responder, editar, inserir, blocos, bloco, abrir. Chama o CLI bin/replica ao lado deste arquivo.
+const { execFileSync } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');
+const CLI = ['doc-comentavel', 'replica'].map((n) => path.join(__dirname, n)).find((f) => fs.existsSync(f) && f !== __filename);
+const PORTA = Number(process.env.REPLICA_PORT) || 7743;
+const abrirUrl = (u) => { if (process.platform === 'darwin') execFileSync('open', [u]); else if (process.platform === 'win32') execFileSync('cmd', ['/c', 'start', '', u]); else execFileSync('xdg-open', [u]); };
+const run = (args) => { try { return execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', timeout: 20000 }); } catch (e) { return 'ERRO: ' + (e.stdout || '') + (e.stderr || e.message); } };
+const tmp = (txt) => { const f = path.join(os.tmpdir(), 'replica-' + Date.now() + Math.random().toString(36).slice(2, 6) + '.md'); fs.writeFileSync(f, txt); return f; };
+const INSTR = 'Replica: todo documento longo (relatório, plano, análise, resposta com tabelas) para o usuário vai como documento comentável local, nunca como HTML solto. Escreva em markdown (títulos #/##, parágrafos, listas, tabelas, > destaque, ```chart com config Chart.js, ```mermaid, <svg> cru), publique com `publicar` e abra. Ele comenta trechos; leia `pendentes`, responda com `responder` e, se for ajuste, `editar` o bloco citando o comentario (cada edição vira versão no histórico). Pergunta com opções vira lista de marcar: `- ( )` escolha única, `- [ ]` várias, `- {off}` liga/desliga (`(*)`, `[x]`, `{on}` já marcadas), logo abaixo de um `### título`; o que ele marca chega em pendentes e em escolhas. Português do Brasil, sem travessão.';
+const TOOLS = [
+  { name: 'publicar', description: 'Publica um documento novo (markdown) e devolve o link local. slug curto sem espaço.', inputSchema: { type: 'object', properties: { slug: { type: 'string' }, markdown: { type: 'string' }, forcar: { type: 'boolean', description: 'recria se já existir (apaga versões; só quando pedido)' } }, required: ['slug', 'markdown'] } },
+  { name: 'abrir', description: 'Abre o documento no navegador do Mac.', inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'] } },
+  { name: 'pendentes', description: 'Comentários do usuário sem resposta, com a seleção e o texto atual do bloco.', inputSchema: { type: 'object', properties: { slug: { type: 'string' } } } },
+  { name: 'responder', description: 'Responde no fio de um comentário.', inputSchema: { type: 'object', properties: { comentario: { type: 'string' }, texto: { type: 'string' } }, required: ['comentario', 'texto'] } },
+  { name: 'editar', description: 'Nova versão de um bloco (markdown do bloco inteiro). Cite o comentário que motivou.', inputSchema: { type: 'object', properties: { slug: { type: 'string' }, bloco: { type: 'string' }, markdown: { type: 'string' }, comentario: { type: 'string' }, motivo: { type: 'string' } }, required: ['slug', 'bloco', 'markdown'] } },
+  { name: 'inserir', description: 'Insere um bloco novo depois de outro.', inputSchema: { type: 'object', properties: { slug: { type: 'string' }, depoisDe: { type: 'string' }, markdown: { type: 'string' }, comentario: { type: 'string' }, motivo: { type: 'string' } }, required: ['slug', 'depoisDe', 'markdown'] } },
+  { name: 'blocos', description: 'Lista os blocos (id, versão, começo do texto).', inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'] } },
+  { name: 'escolhas', description: 'O que o usuário marcou em cada pergunta de escolha do documento (radio, checkbox, liga/desliga).', inputSchema: { type: 'object', properties: { slug: { type: 'string' } }, required: ['slug'] } },
+  { name: 'bloco', description: 'Markdown atual de um bloco.', inputSchema: { type: 'object', properties: { slug: { type: 'string' }, bloco: { type: 'string' } }, required: ['slug', 'bloco'] } },
+];
+function chamar(n, a) {
+  const ex = (k) => (a[k] ? ['--' + k, a[k]] : []);
+  if (n === 'publicar') return run(['publicar', a.slug, tmp(a.markdown), ...(a.forcar ? ['--forcar'] : [])]);
+  if (n === 'abrir') { const u = 'http://localhost:' + PORTA + '/' + a.slug; abrirUrl(u); return 'aberto: ' + u; }
+  if (n === 'pendentes') return run(['pendentes', ...(a.slug ? [a.slug] : [])]) || 'nenhum pendente';
+  if (n === 'responder') return run(['responder', a.comentario, '@' + tmp(a.texto)]);
+  if (n === 'editar') return run(['editar', a.slug, a.bloco, '@' + tmp(a.markdown), ...ex('comentario'), ...ex('motivo')]);
+  if (n === 'inserir') return run(['inserir', a.slug, a.depoisDe, '@' + tmp(a.markdown), ...ex('comentario'), ...ex('motivo')]);
+  if (n === 'blocos') return run(['blocos', a.slug]);
+  if (n === 'escolhas') return run(['escolhas', a.slug]);
+  if (n === 'bloco') return run(['bloco', a.slug, a.bloco]);
+  return 'ferramenta desconhecida';
+}
+let buf = ''; process.stdin.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l.trim()) trata(JSON.parse(l)); } });
+const env = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+function trata(m) {
+  if (m.method === 'initialize') return env({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'replica', version: '2.0' }, instructions: INSTR } });
+  if (m.method === 'tools/list') return env({ jsonrpc: '2.0', id: m.id, result: { tools: TOOLS } });
+  if (m.method === 'tools/call') { const out = chamar(m.params.name, m.params.arguments || {}); return env({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: String(out) }], isError: String(out).startsWith('ERRO') } }); }
+  if (m.id !== undefined) env({ jsonrpc: '2.0', id: m.id, result: {} });
+}

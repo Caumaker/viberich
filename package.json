@@ -1,0 +1,15 @@
+{
+  "name": "replica-claude",
+  "version": "0.3.0",
+  "description": "Local commentable documents for working with Claude Code: you comment, tick choices and navigate by keyboard; Claude answers in the thread and edits the block, with full version history.",
+  "license": "MIT",
+  "bin": { "replica": "bin/replica", "replica-mcp": "bin/replica-mcp" },
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "check": "node --check bin/replica && node --check bin/replica-mcp && node scripts/check-html.js",
+    "test": "npm run check && node test/pagina.test.js"
+  },
+  "devDependencies": { "puppeteer-core": "23.11.1" },
+  "repository": { "type": "git", "url": "https://github.com/caumaker/replica.git" },
+  "keywords": ["claude-code", "mcp", "review", "comments", "markdown", "human-in-the-loop"]
+}
