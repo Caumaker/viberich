@@ -10,6 +10,6 @@
     "test": "npm run check && node test/pagina.test.js"
   },
   "devDependencies": { "puppeteer-core": "23.11.1" },
-  "repository": { "type": "git", "url": "https://github.com/caumaker/replica.git" },
+  "repository": { "type": "git", "url": "https://github.com/Caumaker/replica.git" },
   "keywords": ["claude-code", "mcp", "review", "comments", "markdown", "human-in-the-loop"]
 }

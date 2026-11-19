@@ -23,7 +23,7 @@ The interface and the CLI are in Brazilian Portuguese today. Translations are we
 Requires Node 18 or newer. No dependencies at runtime.
 
 ```bash
-git clone https://github.com/caumaker/replica.git
+git clone https://github.com/Caumaker/replica.git
 cd replica
 ln -s "$PWD/bin/replica" /usr/local/bin/replica   # or add bin/ to your PATH
 replica servir &                                  # http://localhost:7743
