@@ -239,6 +239,23 @@ async function step(name, fn) {
       assert.strictEqual(added.r, 1); assert.match(cli('blocks', 'stages'), /\(stage 2\)/);
     });
 
+    await step('MCP: tools are listed and wait returns when the user comments', async () => {
+      const mcp = spawn(process.execPath, [path.join(ROOT, 'bin', 'viberich-mcp')], { env, stdio: ['pipe', 'pipe', 'ignore'] });
+      let out = ''; mcp.stdout.on('data', (d) => (out += d));
+      const rpc = (id, method, params) => mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      const answer = (id) => until(() => out.split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((m) => m.id === id), 'MCP answer ' + id, 20000);
+      try {
+        rpc(1, 'initialize', {}); rpc(2, 'tools/list', {});
+        const names = (await answer(2)).result.tools.map((t) => t.name);
+        assert.deepStrictEqual(names, ['publish', 'open', 'wait', 'pending', 'reply', 'edit', 'insert', 'stage', 'blocks', 'block', 'choices']);
+        rpc(3, 'tools/call', { name: 'wait', arguments: { seconds: 9999 } }); await sleep(3000);
+        rpc(4, 'tools/call', { name: 'choices', arguments: { slug: 'stages' } });
+        assert.match((await answer(4)).result.content[0].text, /M1: When do we switch production/, 'the server answers while wait blocks');
+        await page.evaluate((id) => post('/comment', { block: id, selection: '', segments: [], text: 'one more thing' }), sids.context);
+        assert.match((await answer(3)).result.content[0].text, /new comment \(\d+ pending\)/);
+      } finally { mcp.kill(); }
+    });
+
     await step('no JavaScript errors on the page', async () => { assert.ok(!pageErrors.length, pageErrors.join(' / ')); });
   } finally {
     if (browser) await browser.close();

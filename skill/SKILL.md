@@ -12,7 +12,7 @@ Use it whenever your answer is longer than a screen, has a table, or asks the us
 1. Write a well-structured `.md` (in the project folder when it belongs to the project, otherwise in a scratch folder).
 2. Publish it: `viberich publish <slug> <file.md>` (short slug, lowercase letters and hyphens), or the MCP tool `publish`. `--force` recreates the document and drops its history: only when the user asks.
 3. Open `http://localhost:7743/<slug>` (MCP tool `open`) and write one line in the terminal with the link. Nothing else.
-4. Keep `viberich wait 3500` running in the background. When it returns, handle what arrived and start it again.
+4. Keep `viberich wait 3500` running in the background. When it returns, handle what arrived and start it again. Without a shell (MCP only), call the `wait` tool (at most 600 s per call) in a loop, then `pending`.
 
 If the server is not running, start it with `viberich serve` in the background.
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // viberich-mcp: MCP server (stdio) for Viberich, for Claude Code and Claude Desktop.
-// Tools: publish, open, pending, reply, edit, insert, stage, blocks, block, choices. Each one calls the viberich CLI next to this file.
+// Tools: publish, open, wait, pending, reply, edit, insert, stage, blocks, block, choices. Each one calls the viberich CLI next to this file.
 'use strict';
-const { execFileSync } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');
+const { execFileSync, execFile } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');
 const CLI = path.join(__dirname, 'viberich');
 const PORT = Number(process.env.VIBERICH_PORT) || 7743;
 const openUrl = (u) => {
@@ -11,6 +11,13 @@ const openUrl = (u) => {
   else execFileSync('xdg-open', [u]);
 };
 const run = (args) => { try { return execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', timeout: 20000 }); } catch (e) { return 'ERROR: ' + (((e.stdout || '') + (e.stderr || '')).trim() || e.message); } };
+const WAIT_CAP = 600; // seconds: a tool call that blocks longer than this risks the client's own timeout
+const children = new Set();
+// wait runs asynchronously, so the server keeps answering while it blocks
+const runAsync = (args, ms) => new Promise((ok) => {
+  const child = execFile(process.execPath, [CLI, ...args], { encoding: 'utf8', timeout: ms }, (e, out, err) => { children.delete(child); ok(e && !out ? 'ERROR: ' + (String(err || '').trim() || e.message) : out); });
+  children.add(child);
+});
 // long text goes through a temporary file, so quotes and newlines survive intact
 const withTempFile = (text, fn) => {
   const f = path.join(os.tmpdir(), 'viberich-' + Date.now() + Math.random().toString(36).slice(2, 6) + '.md');
@@ -22,11 +29,13 @@ const INSTRUCTIONS = 'Viberich: publish every long answer (report, plan, analysi
   + 'The user selects passages and comments; read them with `pending`, answer with `reply`, and when a change is asked, `edit` the block citing the comment (each edit becomes a version in the block history). '
   + 'A question with options becomes a card the user ticks: right under a `### question` heading write `- ( )` for a single choice, `- [ ]` for multiple choice, `- {off}` for an on/off switch (`(*)`, `[x]` and `{on}` are pre-selected: use them for your recommendation). '
   + 'What the user ticks arrives in `pending` and in `choices`. For the next round of the same work (a follow-up plan, the next step), use `stage`: it adds a new tab to the same document, and decisions and threads still open in earlier stages show up again at the top of it. '
+  + 'To hear back without polling, call `wait` (it returns a few seconds after the first new comment or tick, or after at most 600 s), then `pending`. '
   + 'Never resolve a thread yourself: the user does.';
 const str = { type: 'string' };
 const TOOLS = [
   { name: 'publish', description: 'Publish a new document from markdown and return its local link. Use a short slug with no spaces.', inputSchema: { type: 'object', properties: { slug: str, markdown: str, force: { type: 'boolean', description: 'recreate it if it already exists (drops the version history; only when the user asks)' } }, required: ['slug', 'markdown'] } },
   { name: 'open', description: 'Open the document in the default browser.', inputSchema: { type: 'object', properties: { slug: str }, required: ['slug'] } },
+  { name: 'wait', description: 'Block until the user sends a new comment, reply or tick (it settles 4 s so a batch arrives together), or until the time runs out. Then call pending.', inputSchema: { type: 'object', properties: { seconds: { type: 'number', description: 'how long to wait, at most 600 (default 600)' } } } },
   { name: 'pending', description: 'Comments and choices from the user that wait for Claude, with the selection and the current text of the block.', inputSchema: { type: 'object', properties: { slug: str } } },
   { name: 'reply', description: 'Answer in the thread of a comment. Light markdown renders in the bubble.', inputSchema: { type: 'object', properties: { comment: str, text: str, quote: { type: 'string', description: 'id of a message in the same thread to quote' } }, required: ['comment', 'text'] } },
   { name: 'edit', description: 'New version of a block (the markdown of the whole block). Pass the comment that asked for it.', inputSchema: { type: 'object', properties: { slug: str, block: str, markdown: str, comment: str, reason: str }, required: ['slug', 'block', 'markdown'] } },
@@ -43,6 +52,7 @@ function call(name, a) {
     return run(['publish', a.slug, f, ...(a.force ? ['--force'] : [])]);
   }
   if (name === 'open') { const u = 'http://localhost:' + PORT + '/' + a.slug; openUrl(u); return 'opened: ' + u; }
+  if (name === 'wait') { const sec = Math.max(5, Math.min(WAIT_CAP, Number(a.seconds) || WAIT_CAP)); return runAsync(['wait', String(sec)], (sec + 15) * 1000); }
   if (name === 'pending') return run(['pending', ...(a.slug ? [a.slug] : [])]) || 'nothing pending';
   if (name === 'reply') return withTempFile(a.text, (f) => run(['reply', a.comment, '@' + f, ...extra('quote')]));
   if (name === 'edit') return withTempFile(a.markdown, (f) => run(['edit', a.slug, a.block, '@' + f, ...extra('comment'), ...extra('reason')]));
@@ -54,14 +64,16 @@ function call(name, a) {
   return 'ERROR: unknown tool ' + name;
 }
 let buf = '';
+process.stdin.on('end', () => { for (const c of children) c.kill(); }); // the client left: stop any wait in progress
 process.stdin.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l.trim()) handle(JSON.parse(l)); } });
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 function handle(m) {
   if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'viberich', version: '0.4.0' }, instructions: INSTRUCTIONS } });
   if (m.method === 'tools/list') return send({ jsonrpc: '2.0', id: m.id, result: { tools: TOOLS } });
   if (m.method === 'tools/call') {
+    const reply = (out) => send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: String(out) }], isError: String(out).startsWith('ERROR') } });
     let out; try { out = call(m.params.name, m.params.arguments || {}); } catch (e) { out = 'ERROR: ' + e.message; }
-    return send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: String(out) }], isError: String(out).startsWith('ERROR') } });
+    return out && typeof out.then === 'function' ? out.then(reply, (e) => reply('ERROR: ' + e.message)) : reply(out);
   }
   if (m.id !== undefined) send({ jsonrpc: '2.0', id: m.id, result: {} });
 }
