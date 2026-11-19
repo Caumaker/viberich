@@ -1,0 +1,400 @@
+#!/usr/bin/env node
+// Vibe Rich UI: rich interaction UI for vibe coding with Claude Code.
+// A local document split into blocks, each with a fixed id and a version history. The user comments on a block or
+// on a selection and ticks choices; Claude answers in the thread and edits blocks, live (server-sent events).
+// Nothing is deleted: remove hides a block, restore creates a new version. Run `vibe-ui help` for the commands.
+'use strict';
+const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
+
+const VERSION = '0.4.0';
+const ROOT = process.env.VIBE_UI_DIR || path.join(os.homedir(), '.vibe-ui', 'docs');
+const PORT = Number(process.env.VIBE_UI_PORT) || 7743;
+const HOME = os.homedir();
+const PAGE_FILE = path.join(__dirname, 'vibe-ui.html');
+const MAX_BODY = 25 * 1024 * 1024; // pasted screenshots arrive as data URLs
+
+const USAGE = `vibe-ui ${VERSION}: rich interaction UI for vibe coding with Claude Code
+
+  vibe-ui serve [port]                         start the server on 127.0.0.1 (default 7743 or VIBE_UI_PORT)
+  vibe-ui publish <slug> <file.md> [--force]   create a document from markdown (--force recreates it, dropping history)
+  vibe-ui blocks <slug>                        list the blocks: id, version, start of the text
+  vibe-ui block <slug> <id>                    print the current markdown of a block
+  vibe-ui edit <slug> <id> <@file|text> [--comment <id>] [--reason "..."]          new version of a block
+  vibe-ui insert <slug> <afterId> <@file|text> [--comment <id>] [--reason "..."]   new block after another one
+  vibe-ui remove <slug> <id> [--comment <id>] [--reason "..."]                     hide a block (it stays in history)
+  vibe-ui pending [slug]                       comments waiting for Claude, with the selection and the block text
+  vibe-ui choices <slug>                       what the user ticked in each choice question
+  vibe-ui reply <commentId> <@file|text> [--quote <messageId>]                     answer in a comment thread
+  vibe-ui resolve <commentId>                  mark a thread as resolved
+  vibe-ui wait [seconds]                       return when a new comment or choice arrives (default 3500)
+
+Choices: a list right under a "### question" heading becomes a card the user ticks.
+  - ( ) option     single choice (radio)      - (*) pre-selected
+  - [ ] option     multiple choice (checkbox) - [x] pre-selected
+  - {off} option   on/off switch              - {on} pre-selected
+Every tick reaches the question's thread as a message from the user: it shows in pending and wakes up wait.
+
+Documents are stored in VIBE_UI_DIR (now: ${ROOT}).`;
+
+// ---------- storage ----------
+const now = () => new Date().toISOString();
+const newId = (prefix = '') => prefix + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+const docDir = (slug) => path.join(ROOT, slug);
+const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; } };
+const writeJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 1));
+const readDoc = (slug) => readJson(path.join(docDir(slug), 'doc.json'), null);
+const writeDoc = (slug, d) => writeJson(path.join(docDir(slug), 'doc.json'), d);
+const readComments = (slug) => readJson(path.join(docDir(slug), 'comments.json'), []);
+const writeComments = (slug, c) => writeJson(path.join(docDir(slug), 'comments.json'), c);
+const readChoices = (slug) => readJson(path.join(docDir(slug), 'choices.json'), {});
+const writeChoices = (slug, c) => writeJson(path.join(docDir(slug), 'choices.json'), c);
+const slugs = () => fs.existsSync(ROOT) ? fs.readdirSync(ROOT).filter((d) => fs.existsSync(path.join(ROOT, d, 'doc.json'))) : [];
+const latest = (blk) => blk.versions.at(-1);
+const lastBy = (thread, author) => thread.messages.filter((m) => m.author === author).at(-1);
+const lastReal = (thread) => thread.messages.filter((m) => m.author !== 'system').at(-1);
+const waitingForClaude = (thread) => !thread.resolved && (thread.messages.at(-1) || {}).author === 'user';
+const isInside = (f, dir) => f === dir || f.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+
+// ---------- markdown ----------
+const CHOICE_RE = /^- (\(( |\*|x)\)|\[( |x|X)\]|\{(on|off)\}) +(.*)$/;
+// choice items of a block: [{ type: radio | check | switch, pre: bool, text }]
+const options = (md) => md.split('\n').map((l) => l.match(CHOICE_RE)).filter(Boolean)
+  .map((m) => ({ type: m[1][0] === '(' ? 'radio' : m[1][0] === '[' ? 'check' : 'switch', pre: /\*|x|X|on/.test(m[1]), text: m[5] }));
+const plain = (t) => String(t).replace(/\*\*|`/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = (t) => esc(t)
+  .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+// splits markdown into blocks: one paragraph, list, table, callout, heading, fenced block or raw html/svg each
+function split(md) {
+  const L = md.replace(/\r/g, '').split('\n'); const B = []; let i = 0;
+  while (i < L.length) {
+    const l = L[i]; if (!l.trim()) { i++; continue; }
+    let j = i + 1;
+    if (l.startsWith('```')) { while (j < L.length && !L[j].startsWith('```')) j++; j++; }
+    else if (/^#{1,3} /.test(l)) j = i + 1;
+    else if (l.startsWith('<')) { while (j < L.length && L[j].trim()) j++; }
+    else if (l.startsWith('> ')) { while (j < L.length && L[j].startsWith('>')) j++; }
+    else if (l.startsWith('|')) { while (j < L.length && L[j].startsWith('|')) j++; }
+    else if (/^(- |\d+\. )/.test(l)) { while (j < L.length && /^(- |\d+\. |    )/.test(L[j])) j++; }
+    else { while (j < L.length && L[j].trim() && !/^(#|\||- |\d+\. |> |<)/.test(L[j])) j++; }
+    B.push(L.slice(i, j).join('\n')); i = j;
+  }
+  return B;
+}
+
+function render(md) {
+  const L = md.split('\n'); const first = L[0]; let m;
+  if (first.startsWith('```chart')) return { type: 'chart', html: `<div class="fig chart"><canvas data-chart='${esc(L.slice(1, -1).join('\n')).replace(/'/g, '&#39;')}'></canvas></div>` };
+  if (first.startsWith('```mermaid')) return { type: 'mermaid', html: `<div class="fig"><pre class="mermaid">${esc(L.slice(1, -1).join('\n'))}</pre></div>` };
+  if (first.startsWith('```')) return { type: 'code', html: `<pre class="fig" style="white-space:pre-wrap">${esc(L.slice(1, -1).join('\n'))}</pre>` };
+  if (first.startsWith('<')) return { type: 'fig', html: md };
+  if ((m = first.match(/^(#{1,3}) (.*)/))) return { type: 'h' + m[1].length, html: `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>` };
+  if (first.startsWith('> ')) {
+    const rows = L.map((x) => x.replace(/^> ?/, '')).map((x) => /^\s+(\d+\.|-) /.test(x) ? `<div class="li2">${inline(x.trim().replace(/^- /, ''))}</div>`
+      : x.startsWith('- ') ? `<div class="li">${inline(x.slice(2))}</div>` : (x.trim() ? `<p>${inline(x)}</p>` : ''));
+    return { type: 'callout', html: `<div class="callout">${rows.join('')}</div>` };
+  }
+  if (first.startsWith('|')) {
+    const cells = (r) => r.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+    const head = cells(L[0]);
+    return { type: 'table', html: `<div class="table-wrap"><table><thead><tr>${head.map((x) => `<th>${inline(x)}</th>`).join('')}</tr></thead><tbody>${L.slice(2).map((r) => `<tr>${cells(r).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` };
+  }
+  if (CHOICE_RE.test(first)) {
+    const ops = options(md);
+    return { type: 'choice', html: `<div class="choices" contenteditable="false">${ops.map((o, k) => `<label class="opt opt-${o.type}"><input type="${o.type === 'radio' ? 'radio' : 'checkbox'}" data-i="${k}"${o.pre ? ' data-pre="1"' : ''}>${o.type === 'switch' ? '<span class="sw"></span>' : ''}<span class="tx">${inline(o.text)}</span></label>`).join('')}</div>` };
+  }
+  if (/^(- |\d+\. )/.test(first)) {
+    const ordered = /^\d+\. /.test(first); const items = [];
+    for (const x of L) { if (x.startsWith('    ') && items.length) items[items.length - 1] += '<br>' + inline(x.trim().replace(/^- /, '')); else if (x.trim()) items.push(inline(x.replace(/^(- |\d+\. )/, ''))); }
+    const tag = ordered ? 'ol' : 'ul';
+    return { type: 'list', html: `<${tag}>${items.map((x) => `<li>${x}</li>`).join('')}</${tag}>` };
+  }
+  return { type: 'p', html: `<p>${inline(L.join(' '))}</p>` };
+}
+
+// ---------- document operations ----------
+function newVersion(blk, md, author, reason, comment) {
+  const v = (latest(blk)?.v || 0) + 1;
+  blk.versions.push({ v, md: md.trim(), at: now(), author, reason: reason || '', comment: comment || '' });
+  return v;
+}
+// tells the thread that started a change what Claude did
+function noteInThread(slug, commentId, text) {
+  if (!commentId) return;
+  const C = readComments(slug); const c = C.find((x) => x.id === commentId);
+  if (c) { c.messages.push({ id: newId('m'), author: 'claude', kind: 'edit', text, at: now() }); writeComments(slug, C); }
+}
+// title of a question: the h3 (or h2) right above the list of choices
+function questionTitle(d, id) {
+  const vis = d.blocks.filter((b) => !b.hidden); const k = vis.findIndex((b) => b.id === id);
+  for (let i = k - 1; i >= 0 && i >= k - 4; i--) {
+    const md = latest(vis[i]).md; const m = md.match(/^#{2,3} (.*)/);
+    if (m) return plain(m[1]);
+    if (CHOICE_RE.test(md)) break;
+  }
+  return '';
+}
+function choose(slug, blockId, checked) {
+  const d = readDoc(slug); const blk = d.blocks.find((x) => x.id === blockId); if (!blk) return;
+  const ops = options(latest(blk).md);
+  checked = [...new Set(checked)].filter((k) => k < ops.length).sort((a, b) => a - b);
+  const CH = readChoices(slug);
+  CH[blockId] = { checked, labels: checked.map((k) => plain(ops[k].text)), v: latest(blk).v, at: now() };
+  writeChoices(slug, CH);
+  const title = questionTitle(d, blockId);
+  const text = (title ? title + ': ' : '') + (checked.length ? checked.map((k) => (ops[k].type === 'switch' ? 'on: ' : '') + plain(ops[k].text)).join(' | ') : 'cleared every option');
+  const C = readComments(slug);
+  let c = C.find((x) => x.block === blockId && x.kind === 'choice' && !x.resolved);
+  const msg = { id: newId('m'), author: 'user', kind: 'choice', text, at: now() };
+  if (!c) {
+    c = { id: newId('c'), kind: 'choice', block: blockId, selection: title, segments: [], blockV: latest(blk).v, resolved: false, messages: [msg] };
+    C.push(c);
+  } else {
+    // a new tick replaces the previous one while Claude has not answered yet
+    const last = lastReal(c);
+    if (last && last.author === 'user' && last.kind === 'choice') Object.assign(last, { text, at: msg.at }); else c.messages.push(msg);
+  }
+  writeComments(slug, C);
+}
+const view = (slug) => {
+  const d = readDoc(slug);
+  return {
+    title: d.title, source: d.source || '',
+    blocks: d.blocks.filter((b) => !b.hidden).map((b) => { const last = latest(b); return { id: b.id, v: last.v, at: last.at, author: last.author, ...render(last.md) }; }),
+  };
+};
+
+// ---------- server ----------
+const openWithOS = (target, reveal) => {
+  const cp = require('child_process');
+  if (process.platform === 'darwin') cp.execFile('open', reveal ? ['-R', target] : [target]);
+  else if (process.platform === 'win32') cp.execFile('explorer', reveal ? ['/select,', target] : [target]);
+  else cp.execFile('xdg-open', [reveal ? path.dirname(target) : target]);
+};
+const LOCAL_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const hostName = (h) => String(h || '').replace(/:\d+$/, '').toLowerCase();
+const SECRET_RE = /[\\/]\.(secrets|ssh|gnupg|aws|kube|docker)([\\/]|$)|\.env(\.[\w-]+)?$|id_rsa|id_ed25519|\.pem$|\.key$|\.p12$|\.pfx$/i;
+const resolveHomePath = (p) => path.resolve(String(p || '').replace(/^~/, HOME));
+
+function viewFile(res, f) {
+  const notAllowed = () => { res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('file not found or not allowed'); };
+  if (!isInside(f, HOME) || SECRET_RE.test(f) || !fs.existsSync(f)) return notAllowed();
+  if (fs.statSync(f).isDirectory()) {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(`<meta charset="utf-8"><body style="font:15px Inter,sans-serif;padding:32px"><h3>${esc(f)}</h3>` + fs.readdirSync(f).map((n) => `<div><a href="/view?p=${encodeURIComponent(path.join(f, n))}">${esc(n)}</a></div>`).join(''));
+  }
+  const ext = path.extname(f).toLowerCase();
+  const types = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.html': 'text/html; charset=utf-8' };
+  if (types[ext]) {
+    const headers = { 'content-type': types[ext] };
+    // html and svg run in a sandbox: their scripts cannot reach this server's API
+    if (ext === '.html' || ext === '.svg') headers['content-security-policy'] = 'sandbox allow-scripts allow-popups';
+    res.writeHead(200, headers); return res.end(fs.readFileSync(f));
+  }
+  const txt = fs.readFileSync(f, 'utf8');
+  const body = ext === '.md' ? split(txt).map((b) => render(b).html).join('\n') : `<pre style="white-space:pre-wrap;font:13.5px/1.55 ui-monospace,Menlo,monospace">${esc(txt)}</pre>`;
+  const btn = 'position:fixed;top:16px;z-index:9;border-radius:10px;padding:8px 14px;font:600 14px Inter,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.1)';
+  const mdTools = ext !== '.md' ? '' : `<button id="folder" style="${btn};right:136px;border:1px solid #d6e2ef;background:#fff;color:#1d63a6">Open folder</button>`
+    + `<script>document.getElementById('folder').onclick=()=>fetch('/reveal?p='+encodeURIComponent(${JSON.stringify(f).replace(/</g, '\\u003c')}))</script>`
+    + `<button id="cp" style="${btn};right:20px;border:0;background:#1d63a6;color:#fff">Copy .md</button><textarea id="raw" hidden>${esc(txt)}</textarea>`
+    + `<script>document.getElementById('cp').onclick=async()=>{const t=document.getElementById('raw').value;try{await navigator.clipboard.writeText(t)}catch(e){const a=document.getElementById('raw');a.hidden=false;a.select();document.execCommand('copy');a.hidden=true}const b=document.getElementById('cp');b.textContent='Copied';b.style.background='#2f7d4f';setTimeout(()=>{b.textContent='Copy .md';b.style.background='#1d63a6'},1500)}</script>`;
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  return res.end(`<!doctype html><meta charset="utf-8"><title>${esc(path.basename(f))}</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Source+Serif+4:wght@700&display=swap" rel="stylesheet"><style>body{margin:0;background:#f6f5f1;font:16.5px/1.7 Inter,sans-serif;color:#1b2026}main{max-width:1100px;margin:24px auto;background:#fff;border:1px solid #e4e1da;border-radius:14px;padding:44px 72px}h1{font:700 36px/1.2 'Source Serif 4',serif}h2{font:700 25px/1.3 'Source Serif 4',serif;border-top:1px solid #e4e1da;padding-top:16px;margin-top:30px}.callout{background:#e9f1f9;border-left:4px solid #1d63a6;border-radius:8px;padding:14px 20px}.li2{padding-left:30px}table{border-collapse:collapse;width:100%;font-size:15px}th,td{border-bottom:1px solid #eee;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f3f2ee}code{background:#f1f0ec;padding:1px 5px;border-radius:4px}.path{color:#5d6873;font-size:13px;margin-bottom:12px}</style><main><div class="path">${esc(f)}</div>${body}</main>${mdTools}`);
+}
+
+function serve(port) {
+  const listeners = new Map(); // slug -> Set(res)
+  const notify = (slug) => { for (const r of listeners.get(slug) || []) r.write('data: changed\n\n'); };
+  const watched = new Set();
+  const watch = () => {
+    for (const s of slugs()) {
+      if (watched.has(s)) continue; watched.add(s);
+      for (const f of ['doc.json', 'comments.json', 'choices.json']) fs.watchFile(path.join(docDir(s), f), { interval: 700 }, () => notify(s));
+    }
+  };
+  watch(); setInterval(watch, 5000);
+
+  http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x'); const p = u.pathname.split('/').filter(Boolean);
+    const json = (o, st = 200) => { res.writeHead(st, { 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(o)); };
+    const deny = (why) => { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); res.end(why); };
+    // only local names reach the server (blocks DNS rebinding), and other websites cannot call the API
+    if (!LOCAL_NAMES.has(hostName(req.headers.host))) return deny('forbidden host');
+    const sensitive = ['api', 'reveal', 'view', 'attachments'].includes(p[0]);
+    if (sensitive && req.headers['sec-fetch-site'] === 'cross-site') return deny('cross-site request refused');
+    if (req.method !== 'GET' && req.headers.origin && !LOCAL_NAMES.has(hostName(req.headers.origin.replace(/^\w+:\/\//, '')))) return deny('cross-origin request refused');
+    const readBody = () => new Promise((ok) => {
+      let d = ''; let size = 0;
+      req.on('data', (c) => { size += c.length; if (size <= MAX_BODY) d += c; });
+      req.on('end', () => { if (size > MAX_BODY) return ok({}); try { ok(JSON.parse(d || '{}')); } catch (e) { ok({}); } });
+    });
+
+    if (p[0] === 'api' && slugs().includes(p[1])) {
+      const s = p[1], route = p[2];
+      if (route === 'events') {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+        res.write('data: hello\n\n');
+        if (!listeners.has(s)) listeners.set(s, new Set());
+        listeners.get(s).add(res); req.on('close', () => listeners.get(s).delete(res)); return;
+      }
+      if (route === 'doc') return json(view(s));
+      if (route === 'md') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(readDoc(s).blocks.filter((b) => !b.hidden).map((b) => latest(b).md).join('\n\n') + '\n'); }
+      if (route === 'comments') return json(readComments(s));
+      if (route === 'choices') return json(readChoices(s));
+      if (route === 'history') { const b = readDoc(s).blocks.find((x) => x.id === u.searchParams.get('b')); return json(b ? b.versions.map((v) => ({ ...v, html: render(v.md).html })) : []); }
+      if (req.method !== 'POST') return json({ error: 'not found' }, 404);
+      return readBody().then((b) => {
+        const attachments = Array.isArray(b.attachments) ? b.attachments.filter((a) => a && a.url).slice(0, 10) : [];
+        if (route === 'attachment' && b.data) {
+          // pasted images become files next to the document, never base64 inside the JSON
+          const m = String(b.data).match(/^data:image\/(png|jpe?g|gif|webp);base64,(.+)$/);
+          if (!m) return json({ error: 'format' });
+          const ad = path.join(docDir(s), 'attachments'); fs.mkdirSync(ad, { recursive: true });
+          const name = `paste-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}-${newId()}.${m[1].replace('jpeg', 'jpg')}`;
+          fs.writeFileSync(path.join(ad, name), Buffer.from(m[2], 'base64'));
+          return json({ url: `/attachments/${s}/${name}`, path: path.join(ad, name) });
+        }
+        if (route === 'comment' && (b.text || attachments.length)) {
+          const C = readComments(s);
+          C.push({ id: newId('c'), block: b.block, selection: b.selection || '', segments: Array.isArray(b.segments) ? b.segments.slice(0, 40) : [], blockV: b.blockV || 0, resolved: false, messages: [{ id: newId('m'), author: 'user', text: String(b.text || '').trim(), attachments, quote: b.quote || null, at: now() }] });
+          writeComments(s, C);
+        } else if (route === 'reply') {
+          const C = readComments(s); const c = C.find((x) => x.id === b.id);
+          if (c && (b.text || attachments.length)) { c.messages.push({ id: newId('m'), author: 'user', text: String(b.text || '').trim(), attachments, quote: b.quote || null, at: now() }); c.resolved = false; }
+          writeComments(s, C);
+        } else if (route === 'choose' && b.block) {
+          choose(s, b.block, Array.isArray(b.checked) ? b.checked.map(Number).filter((n) => n >= 0 && n < 50) : []);
+        } else if (route === 'resolve') {
+          const C = readComments(s); const c = C.find((x) => x.id === b.id);
+          if (c) { c.resolved = !!b.resolved; c.messages.push({ author: 'system', text: c.resolved ? 'Comment marked as resolved' : 'Comment reopened', at: now() }); }
+          writeComments(s, C);
+        } else if (route === 'edit' && b.md) {
+          const d = readDoc(s); const blk = d.blocks.find((x) => x.id === b.block);
+          if (blk) { newVersion(blk, b.md, 'user', b.reason || 'direct edit'); writeDoc(s, d); }
+        } else if (route === 'restore') {
+          const d = readDoc(s); const blk = d.blocks.find((x) => x.id === b.block); const old = blk && blk.versions.find((v) => v.v === b.v);
+          if (old) { newVersion(blk, old.md, 'user', `restored version ${old.v}`); writeDoc(s, d); }
+        }
+        json({ ok: true });
+      });
+    }
+    if (p[0] === 'reveal') { // shows a file in the file manager (only inside the home folder)
+      const f = resolveHomePath(u.searchParams.get('p'));
+      if (!isInside(f, HOME) || !fs.existsSync(f)) { res.writeHead(404); return res.end('not found'); }
+      openWithOS(f, !fs.statSync(f).isDirectory());
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
+    }
+    if (p[0] === 'view') return viewFile(res, resolveHomePath(u.searchParams.get('p'))); // read-only, inside home, never secrets
+    if (p[0] === 'attachments' && slugs().includes(p[1]) && /^[\w.-]+$/.test(p[2] || '')) {
+      const f = path.join(docDir(p[1]), 'attachments', p[2]);
+      if (fs.existsSync(f)) {
+        const ext = p[2].split('.').pop();
+        res.writeHead(200, { 'content-type': 'image/' + ({ png: 'png', gif: 'gif', webp: 'webp' }[ext] || 'jpeg') });
+        return res.end(fs.readFileSync(f));
+      }
+    }
+    if (p[0] && slugs().includes(p[0])) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(fs.readFileSync(PAGE_FILE, 'utf8').replace('__SLUG__', () => JSON.stringify(p[0])).replace('__TITLE__', () => esc(readDoc(p[0]).title)));
+    }
+    if (!p[0]) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end('<!doctype html><meta charset="utf-8"><title>Vibe Rich UI</title><body style="font:16px Inter,system-ui,sans-serif;padding:40px"><h2>Documents</h2>' + (slugs().map((x) => `<p><a href="/${x}">${esc(readDoc(x).title)}</a></p>`).join('') || '<p>No documents yet. Publish one with <code>vibe-ui publish &lt;slug&gt; &lt;file.md&gt;</code>.</p>'));
+    }
+    res.writeHead(404); res.end('not found');
+  }).listen(port, '127.0.0.1', () => console.log(`vibe-ui ${VERSION} listening on http://localhost:${port}`));
+}
+
+// ---------- CLI ----------
+const args = process.argv.slice(2); const [cmd, a, b, c] = args;
+const opt = (name) => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] || '' : ''; };
+const content = (x) => x && x.startsWith('@') ? fs.readFileSync(x.slice(1), 'utf8') : x;
+const fail = (msg) => { console.log(msg); process.exit(1); };
+const needDoc = (slug) => readDoc(slug) || fail(`document not found: ${slug}`);
+const needBlock = (d, id) => d.blocks.find((y) => y.id === id) || fail('block not found');
+const suffix = () => (opt('reason') ? ': ' + opt('reason') : '');
+
+if (cmd === 'serve') serve(Number(a) || PORT);
+else if (cmd === 'publish') {
+  if (!a || !b) fail('usage: vibe-ui publish <slug> <file.md> [--force]');
+  if (!/^[A-Za-z0-9][\w-]*$/.test(a)) fail('the slug may only have letters, digits, - and _');
+  if (readDoc(a) && !args.includes('--force')) fail('already exists; use edit or insert, or --force to recreate it');
+  const md = fs.readFileSync(b, 'utf8'); fs.mkdirSync(docDir(a), { recursive: true });
+  const parts = split(md); const title = ((parts[0] || '').match(/^# (.*)/) || [, a])[1];
+  const d = { title, source: path.resolve(b), createdAt: now(), blocks: parts.map((x) => { const blk = { id: newId('b'), versions: [] }; newVersion(blk, x, 'claude', 'first version'); return blk; }) };
+  writeDoc(a, d); if (!fs.existsSync(path.join(docDir(a), 'comments.json'))) writeComments(a, []);
+  console.log(`published: http://localhost:${PORT}/${a} (${d.blocks.length} blocks)`);
+} else if (cmd === 'blocks') {
+  for (const x of needDoc(a).blocks) console.log(`${x.id}${x.hidden ? ' (hidden)' : ''} v${latest(x).v}  ${latest(x).md.replace(/\s+/g, ' ').slice(0, 90)}`);
+} else if (cmd === 'block') {
+  const x = needDoc(a).blocks.find((y) => y.id === b); console.log(x ? latest(x).md : 'not found');
+} else if (cmd === 'edit') {
+  const d = needDoc(a); const blk = needBlock(d, b);
+  const v = newVersion(blk, content(c), 'claude', opt('reason'), opt('comment')); writeDoc(a, d);
+  noteInThread(a, opt('comment'), `Changed the block (version ${v})${suffix()}.`);
+  console.log(`block ${b} is now at version ${v}`);
+} else if (cmd === 'insert') {
+  const d = needDoc(a); const k = d.blocks.findIndex((y) => y.id === b); if (k < 0) fail('block not found');
+  const blk = { id: newId('b'), versions: [] }; newVersion(blk, content(c), 'claude', opt('reason') || 'new block', opt('comment'));
+  d.blocks.splice(k + 1, 0, blk); writeDoc(a, d);
+  noteInThread(a, opt('comment'), `Inserted a new block${suffix()}.`);
+  console.log('inserted', blk.id);
+} else if (cmd === 'remove') {
+  const d = needDoc(a); const blk = needBlock(d, b); blk.hidden = true;
+  newVersion(blk, latest(blk).md, 'claude', 'hidden: ' + (opt('reason') || ''), opt('comment')); writeDoc(a, d);
+  noteInThread(a, opt('comment'), `Hid the block (it stays in the history)${suffix()}.`);
+  console.log('hidden');
+} else if (cmd === 'pending') {
+  for (const s of a ? [needDoc(a) && a] : slugs()) {
+    const d = readDoc(s); const C = readComments(s);
+    for (const x of C) {
+      if (!waitingForClaude(x)) continue;
+      const blk = d.blocks.find((y) => y.id === x.block); const last = lastBy(x, 'user');
+      let quoted = '';
+      if (last.quote) {
+        const t = C.find((y) => y.id === last.quote.thread);
+        const m = t && (t.messages.find((z) => z.id === last.quote.msg) || t.messages[Number(last.quote.msg)]);
+        if (m) quoted = `  quoting (${m.author === 'user' ? 'the user' : 'you'}): ${String(m.text).slice(0, 200)}\n`;
+      }
+      const images = x.messages.filter((m) => m.author === 'user').flatMap((m) => m.attachments || []).map((att) => '  image: ' + att.path + '\n').join('');
+      const blockText = blk ? latest(blk).md.split('\n').map((l) => '    ' + l).join('\n') : '';
+      console.log(`[${s}] comment=${x.id} block=${x.block} (v${blk ? latest(blk).v : '?'})\n  selection: ${x.selection || '(whole block)'}\n  request: ${last.text}\n${quoted}${images}  current block text:\n${blockText}\n`);
+    }
+  }
+} else if (cmd === 'reply') {
+  const text = content(args.slice(2).filter((v, i, arr) => v !== '--quote' && arr[i - 1] !== '--quote').join(' '));
+  if (!a || !text || !text.trim()) fail('usage: vibe-ui reply <commentId> <@file|text> [--quote <messageId>]');
+  for (const s of slugs()) {
+    const C = readComments(s); const x = C.find((y) => y.id === a);
+    if (x) { x.messages.push({ id: newId('m'), author: 'claude', text: text.trim(), quote: opt('quote') ? { thread: x.id, msg: opt('quote') } : null, at: now() }); writeComments(s, C); console.log('replied'); process.exit(0); }
+  }
+  fail('comment not found');
+} else if (cmd === 'choices') {
+  const d = needDoc(a); const CH = readChoices(a); let n = 0;
+  for (const blk of d.blocks.filter((x) => !x.hidden)) {
+    const ops = options(latest(blk).md); if (!ops.length) continue; n++;
+    const e = CH[blk.id];
+    console.log(`${blk.id}  ${questionTitle(d, blk.id) || '(untitled)'}  ${e ? 'answered at ' + e.at.slice(0, 16).replace('T', ' ') : 'NO ANSWER YET'}`);
+    ops.forEach((o, k) => console.log(`   ${(e ? e.checked.includes(k) : o.pre) ? '[x]' : '[ ]'} ${plain(o.text)}${!e && o.pre ? '  (pre-selected)' : ''}`));
+  }
+  if (!n) console.log('no choice questions in this document');
+} else if (cmd === 'resolve') {
+  let found = false;
+  for (const s of slugs()) { const C = readComments(s); const x = C.find((y) => y.id === a); if (x) { x.resolved = true; writeComments(s, C); found = true; console.log('resolved'); } }
+  if (!found) fail('comment not found');
+} else if (cmd === 'wait') {
+  const count = () => slugs().reduce((n, s) => n + readComments(s).filter(waitingForClaude).length, 0);
+  const base = count(); const end = Date.now() + (Number(a) || 3500) * 1000;
+  const t = setInterval(() => {
+    const n = count();
+    if (n > base || (n > 0 && base === 0)) {
+      // a short grace period lets the user finish a burst of comments before Claude starts
+      clearInterval(t); setTimeout(() => { console.log(`new comment (${count()} pending)`); process.exit(0); }, 4000); return;
+    }
+    if (Date.now() > end) { clearInterval(t); console.log('timed out'); process.exit(0); }
+  }, 2500);
+} else if (cmd === 'version' || cmd === '--version') console.log(VERSION);
+else { console.log(USAGE); if (cmd && cmd !== 'help' && cmd !== '--help' && cmd !== '-h') process.exit(1); }

@@ -1,15 +1,19 @@
 {
-  "name": "replica-claude",
-  "version": "0.3.0",
-  "description": "Local commentable documents for working with Claude Code: you comment, tick choices and navigate by keyboard; Claude answers in the thread and edits the block, with full version history.",
+  "name": "vibe-rich-ui",
+  "version": "0.4.0",
+  "description": "Rich interaction UI for vibe coding with Claude Code: comment on passages, tick choices, approve decisions and let Claude answer and edit, live, in a local page.",
   "license": "MIT",
-  "bin": { "replica": "bin/replica", "replica-mcp": "bin/replica-mcp" },
+  "bin": { "vibe-ui": "bin/vibe-ui", "vibe-ui-mcp": "bin/vibe-ui-mcp" },
+  "files": ["bin/", "skill/", "examples/"],
   "engines": { "node": ">=18" },
   "scripts": {
-    "check": "node --check bin/replica && node --check bin/replica-mcp && node scripts/check-html.js",
-    "test": "npm run check && node test/pagina.test.js"
+    "check": "node --check bin/vibe-ui && node --check bin/vibe-ui-mcp && node scripts/check-html.js",
+    "test": "npm run check && node test/e2e.test.js",
+    "demo": "node scripts/record-demo.js"
   },
   "devDependencies": { "puppeteer-core": "23.11.1" },
-  "repository": { "type": "git", "url": "https://github.com/Caumaker/replica.git" },
-  "keywords": ["claude-code", "mcp", "review", "comments", "markdown", "human-in-the-loop"]
+  "repository": { "type": "git", "url": "git+https://github.com/Caumaker/vibe-rich-ui.git" },
+  "homepage": "https://github.com/Caumaker/vibe-rich-ui#readme",
+  "bugs": { "url": "https://github.com/Caumaker/vibe-rich-ui/issues" },
+  "keywords": ["claude-code", "vibe-coding", "mcp", "human-in-the-loop", "review", "comments", "markdown", "local-first"]
 }

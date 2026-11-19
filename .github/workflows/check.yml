@@ -8,8 +8,21 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: npm run check
-      - name: smoke test
+      - name: CLI and MCP smoke test
         run: |
-          export REPLICA_DIR=$RUNNER_TEMP/docs
-          node bin/replica publicar exemplo examples/exemplo.md
-          node bin/replica escolhas exemplo
+          export VIBE_UI_DIR=$RUNNER_TEMP/docs
+          node bin/vibe-ui publish demo examples/demo.md
+          node bin/vibe-ui blocks demo
+          node bin/vibe-ui choices demo
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | node bin/vibe-ui-mcp > "$RUNNER_TEMP/mcp.txt"
+          grep -q '"name":"publish"' "$RUNNER_TEMP/mcp.txt"
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+        env:
+          CHROME: /usr/bin/google-chrome

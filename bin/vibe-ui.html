@@ -1,0 +1,242 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+:root{--bg:#f6f5f1;--paper:#fff;--tx:#1b2026;--mu:#5d6873;--ac:#1d63a6;--ac2:#e9f1f9;--bd:#e4e1da;--cm:#f2b632;--cm2:#fff6dc;--ok:#2f7d4f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.65 Inter,system-ui,sans-serif}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:24px;max-width:none;margin:0;padding:20px 24px}
+@media(max-width:1100px){.layout{grid-template-columns:1fr}.sidebar{position:static!important;max-height:none!important}}
+.paper{overflow-wrap:break-word;min-width:0;background:var(--paper);border:1px solid var(--bd);border-radius:14px;padding:44px 80px 72px;font-size:16.5px;line-height:1.7;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+@media(max-width:700px){.paper{padding:26px 18px}}
+.blk{position:relative;border-radius:8px;padding:6px 12px;margin:0 -12px 14px;transition:background .25s}
+.blk:hover{background:#faf8f2}.blk.has{box-shadow:inset 3px 0 0 var(--cm)}.blk.focus{background:#fff1c7}
+.blk.fresh{animation:flash 2.4s ease}@keyframes flash{0%{background:#d9f2e2}100%{background:transparent}}
+h1{font:700 40px/1.15 "Source Serif 4",Georgia,serif;margin:0 0 4px}h2{font:700 27px/1.3 "Source Serif 4",Georgia,serif;margin:32px 0 6px;padding-top:18px;border-top:1px solid var(--bd)}h3{font-size:17px;margin:18px 0 4px}
+p{margin:0}ul,ol{margin:0;padding-left:22px}li{margin:4px 0}a{color:var(--ac)}code{background:#f1f0ec;padding:1px 5px;border-radius:4px;font-size:.9em}
+.callout{background:var(--ac2);border-left:4px solid var(--ac);border-radius:8px;padding:16px 20px}.callout p{margin:0 0 6px}.callout .li{position:relative;padding-left:18px;margin:6px 0}.callout .li2{padding-left:40px;margin:4px 0;position:relative}.callout .li:before{content:"";position:absolute;left:2px;top:.7em;width:6px;height:6px;border-radius:50%;background:var(--ac)}
+.table-wrap{overflow-x:auto;margin:4px 0;border:1px solid var(--bd);border-radius:10px}table{border-collapse:collapse;width:100%;font-size:15px}th{white-space:nowrap;background:#f3f2ee;text-align:left;font-weight:600;color:#39424b;padding:9px 12px;border-bottom:1px solid var(--bd)}td{overflow-wrap:normal;word-break:normal;hyphens:manual;padding:9px 12px;border-bottom:1px solid #efede8;vertical-align:top}tbody tr:last-child td{border-bottom:0}td:first-child{min-width:110px}
+.fig{padding:20px;max-width:1100px;border:1px solid var(--bd);border-radius:12px;background:#fcfcfa}.fig svg{width:100%;height:auto;display:block}.chart{height:320px}
+.tools{position:absolute;right:10px;top:-14px;z-index:3;display:flex;gap:4px;opacity:0;transition:opacity .15s}.blk:hover .tools{opacity:1}
+.tools button{border:1px solid var(--bd);background:#fff;border-radius:7px;height:26px;padding:0 7px;font:600 11.5px Inter;color:var(--mu);cursor:pointer;user-select:none}.tools button:hover{color:var(--ac);border-color:var(--ac)}
+.vb{position:absolute;left:-52px;top:9px;font:600 10.5px Inter;color:#a2a9b0;user-select:none;opacity:0;transition:opacity .15s}.blk:hover .vb{opacity:1}.vb.changed{opacity:1;color:var(--ok)}
+mark.sel{background:#ffe08a;border-radius:2px;cursor:pointer}
+.sidebar{position:sticky;top:20px;align-self:start;max-height:calc(100vh - 36px);overflow-y:auto;overflow-x:hidden;min-width:0}
+.side-title{font-weight:600;font-size:14px;color:var(--mu);margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+.thread{overflow-wrap:break-word;min-width:0;max-width:100%;background:#fff;border:1px solid var(--bd);border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:14.5px;cursor:pointer}.thread.resolved{opacity:.6;background:#fafaf8}.thread.resolved .ref:before{content:'RESOLVED · ';font-weight:600;color:var(--ok)}.thread.active{border-color:var(--cm);box-shadow:0 0 0 2px var(--cm2)}
+.ref{font-size:12.5px;color:var(--mu);border-left:3px solid var(--cm);padding-left:8px;margin-bottom:8px;max-height:4.8em;overflow:hidden}
+.convo{display:flex;flex-direction:column;gap:6px;margin-top:4px;padding:0 30px}.msg{position:relative;max-width:84%;padding:7px 10px 5px;border-radius:12px;font-size:14px;line-height:1.45;box-shadow:0 1px 1px rgba(0,0,0,.06)}.msg.user{align-self:flex-end;background:#d9fdd3;border-bottom-right-radius:4px}.msg.claude{align-self:flex-start;background:#f1f3f5;border-bottom-left-radius:4px}.msg.edit{align-self:flex-start;background:#e7f1fb;border-left:3px solid var(--ac);border-bottom-left-radius:4px}.msg .who{font-size:11.5px;font-weight:600;color:var(--ac);margin-bottom:2px}.msg .time{display:block;text-align:right;margin:2px 0 0;font-size:10.5px;color:#8a949c}.msg img.att{display:block;max-width:100%;max-height:180px;border-radius:8px;margin:4px 0;cursor:zoom-in}.quote-btn{position:absolute;top:4px;right:-30px;opacity:0;border:1px solid var(--bd);background:#fff;border-radius:50%;width:24px;height:24px;font-size:13px;cursor:pointer;color:var(--mu);line-height:20px}.msg.user .quote-btn{right:auto;left:-30px}.msg:hover .quote-btn{opacity:1}.quoted{display:flex;flex-direction:column;background:rgba(0,0,0,.05);border-left:3px solid var(--ac);border-radius:6px;padding:4px 8px;margin:2px 0 5px;font-size:12px;cursor:pointer}.msg.user .quoted{border-left-color:#25a35a}.quoted b{font-size:11.5px;color:var(--ac)}.quoted span{color:#4a5560}.quoting{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px}.quoting .quoted{flex:1;margin:0}.quoting button{border:0;background:none;font-size:18px;color:var(--mu);cursor:pointer}.msg.flash{animation:flash 1.6s ease}
+.previews{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.previews img{height:56px;border-radius:6px;border:1px solid var(--bd)}.msg .q{white-space:pre-wrap;overflow-wrap:break-word}.msg .q code{background:rgba(0,0,0,.07);border-radius:4px;padding:0 4px;font-size:12.5px}.msg .q table.mt{border-collapse:collapse;margin:4px 0;font-size:12.5px;white-space:normal}.msg .q table.mt th,.msg .q table.mt td{border:1px solid rgba(0,0,0,.15);padding:2px 6px;text-align:left}.time{color:#9aa3ab;font-size:11.5px;margin-left:6px}
+.status{font-size:11.5px;color:#9a6b00;margin-top:6px}
+textarea{width:100%;min-height:74px;border:1px solid var(--bd);border-radius:8px;padding:8px;font:inherit;font-size:14px;resize:vertical}
+.actions{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}.actions button{border:0;border-radius:8px;padding:7px 12px;font:600 13px Inter;cursor:pointer}.pri{background:var(--ac);color:#fff}.sec{background:#efede8;color:var(--tx)}
+#commentSel{position:absolute;display:none;z-index:20;background:var(--tx);color:#fff;border-radius:8px;padding:6px 11px;font:600 13px Inter;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.empty{color:var(--mu);font-size:13.5px;background:#fff;border:1px dashed var(--bd);border-radius:12px;padding:14px;line-height:1.5}
+.editor textarea{min-height:140px;font:13.5px/1.5 ui-monospace,Menlo,monospace}
+#modal{position:fixed;inset:0;background:rgba(20,24,28,.45);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto}
+#modal .box{background:#fff;border-radius:14px;max-width:820px;width:100%;padding:24px 28px}
+.version{border-top:1px solid var(--bd);padding:14px 0}.version .head{font-size:13px;color:var(--mu);margin-bottom:6px}.version .head b{color:var(--tx)}
+ins{background:#d9f2e2;text-decoration:none}del{background:#fbe0dc;color:#8a2c1c}
+.lk{display:inline-block;vertical-align:bottom;background:#eef3f9;border:1px solid #d6e2ef;color:var(--ac);border-radius:6px;padding:0 6px;font-size:12.5px;font-weight:600;cursor:copy;white-space:nowrap;max-width:calc(100% - 4px);overflow:hidden;text-overflow:ellipsis;line-height:1.5;margin:1px 0}.lk:hover{background:#e2ecf7}.lk.ok{background:#d9f2e2;border-color:#9fd3b2;color:var(--ok)}.lk.ok:after{content:' copied'}.lk .open{text-decoration:none;color:var(--mu);font-weight:400;padding-left:2px}.lk .open:hover{color:var(--ac)}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#bbb;margin-right:6px}.live.on{background:var(--ok)}
+.card{position:relative;border:1px solid var(--bd);border-radius:14px;padding:16px 20px 10px;margin:10px -8px 24px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04),0 6px 18px rgba(20,30,40,.06)}
+.card .blk{margin:0 -12px 8px}.card h3{margin-top:2px}
+.card.answered{border-color:#b9dcc6}
+.card .badge{position:absolute;right:16px;top:-11px;font:600 11.5px/1.6 Inter;background:#fff;border:1px solid var(--bd);border-radius:20px;padding:0 10px;color:var(--mu)}
+.card.answered .badge{color:var(--ok);border-color:#b9dcc6}
+.card.queued{border-color:#e9c46a}.card.queued .badge{color:#9a6b00;border-color:#e9c46a}
+.choices{display:flex;flex-direction:column;gap:7px;margin:6px 0 2px}
+.opt{position:relative;display:flex;align-items:flex-start;gap:10px;padding:9px 13px;border:1px solid var(--bd);border-radius:10px;cursor:pointer;background:#fcfcfa;transition:background .15s,border-color .15s;user-select:none;line-height:1.5}
+.opt:hover{background:#f5f8fc;border-color:#c9d9ea}
+.opt input{margin:3px 0 0;width:17px;height:17px;accent-color:var(--ac);flex:none;cursor:pointer}
+.opt:has(input:checked){background:#eef5fc;border-color:var(--ac)}
+.opt:focus-within{outline:2px solid var(--ac);outline-offset:2px}
+.opt .tx{flex:1}
+.opt-switch input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.sw{flex:none;width:36px;height:20px;border-radius:20px;background:#cfd5db;position:relative;margin-top:2px;transition:background .15s}
+.sw:after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
+.opt-switch input:checked+.sw{background:var(--ac)}.opt-switch input:checked+.sw:after{left:18px}
+#doc{outline:none;caret-color:var(--ac)}
+.blk.cur{background:#f8f6ef}
+.thread:focus{outline:2px solid var(--ac);outline-offset:2px}
+.side-title .keys-btn{border:0;background:none;color:var(--ac);font:600 12.5px Inter;cursor:pointer;padding:0 0 0 8px}
+.keys td{padding:5px 10px;border-bottom:1px solid #efede8;font-size:14px}.keys kbd{display:inline-block;border:1px solid #cfd5db;border-bottom-width:2px;border-radius:6px;padding:0 6px;font:600 12px ui-monospace,Menlo,monospace;background:#f8f9fa;margin:1px 2px}
+.topbar{position:sticky;top:0;z-index:15;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-30px -40px 22px;padding:10px 16px;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border:1px solid var(--bd);border-radius:12px;box-shadow:0 4px 14px rgba(20,30,40,.06);font-size:13.5px}
+.topbar label{display:flex;gap:7px;align-items:center;cursor:pointer;color:var(--mu);font-weight:500}.topbar label input{width:16px;height:16px;accent-color:var(--ac)}
+.topbar .spacer{flex:1}.topbar button{border:0;border-radius:9px;padding:7px 13px;font:600 13px Inter;cursor:pointer}.topbar button[disabled]{opacity:.45;cursor:default}
+.topbar .ghost{background:#fff;color:var(--ac);border:1px solid #d6e2ef;padding:6px 12px}.topbar .ghost.ok{color:var(--ok);border-color:#9fd3b2}
+.approve{background:var(--ok);color:#fff}.send{background:var(--ac);color:#fff}
+.approve-end{display:flex;justify-content:flex-end;margin:-8px -8px 26px}.approve-end button{border:0;border-radius:10px;padding:9px 16px;font:600 14px Inter;cursor:pointer;background:var(--ok);color:#fff;box-shadow:0 2px 8px rgba(47,125,79,.25)}
+.thread.queued{border-style:dashed;border-color:#e9c46a;background:#fffdf5}.thread.queued .tag{font:600 11.5px Inter;color:#9a6b00}.thread.queued button{float:right;border:0;background:none;color:var(--mu);font-size:16px;cursor:pointer}
+@media(max-width:700px){.topbar{margin:-14px -6px 18px}}
+</style></head><body>
+<div class="layout"><main class="paper"><div class="topbar" id="topbar"><label title="Unchecked: choices, comments and replies wait in a queue until you click Send"><input type="checkbox" id="sendNow"> Send instantly</label><span class="spacer"></span><button class="ghost" id="openFolder" title="Show the source .md in your file manager">Open folder</button><button class="ghost" id="copyMd" title="Copy the whole document as markdown">Copy .md</button><button class="approve" id="approve" title="Send every unanswered decision with the option ticked now (the recommended one if you did not touch it)">Approve decisions</button><button class="send" id="send">Send</button></div><div id="doc"></div></main>
+<aside class="sidebar"><div class="side-title"><span><span class="live" id="live"></span><span id="count">Comments</span><button class="keys-btn" onclick="showShortcuts()" title="Keyboard shortcuts (?)">⌨ keyboard</button></span><span style="font-weight:400;font-size:12.5px" id="countResolved"></span></div><div id="threads"></div></aside></div>
+<div id="commentSel">Comment selection</div><div id="modal"><div class="box" id="modalBox"></div></div>
+<script>
+const SLUG=__SLUG__;let CHOICES={},returnTo=null,quote=null,attachments=[],DOC={blocks:[]},THREADS=[],target=null,active=null,editing=null,versions={};
+const $=s=>document.querySelector(s),api=(u,o)=>fetch('/api/'+SLUG+u,o).then(r=>r.json()),post=(u,b)=>api(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)});
+const fmtTime=t=>new Date(t).toLocaleString(undefined,{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const lastReal=c=>c.messages.filter(m=>m.author!=='system').at(-1)||{};
+function linkLabel(u){const own=u.match(new RegExp('^https?://(localhost|127\\.0\\.0\\.1):'+location.port+'/([\\w-]+)'));if(own)return 'document: '+own[2].replace(/-/g,' ');if(/^https?:/.test(u)){try{const x=new URL(u);const seg=x.pathname.split('/').filter(Boolean).pop()||'';return x.hostname.replace(/^www\./,'')+(seg?' › '+decodeURIComponent(seg).slice(0,28):'')}catch(e){return u.slice(0,30)}}return u.split('/').filter(Boolean).pop()}
+function chip(u,label){const web=/^https?:/.test(u);return '<span class="lk" data-u="'+esc(u)+'" title="'+esc(u)+'\nclick: copy · Cmd/Ctrl+click: open in a new tab" onclick="copyLink(event,this)">'+esc(label||linkLabel(u))+(web?'<a class="open" href="'+esc(u)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗</a>':'')+'</span>'}
+const msgId=(m,k)=>m.id||String(k);
+function findMsg(q){const t=THREADS.find(x=>x.id===q.thread);if(!t)return null;const k=t.messages.findIndex((m,i)=>msgId(m,i)===q.msg);return k<0?null:{t,m:t.messages[k]}}
+function quoteHtml(q){const f=findMsg(q);if(!f)return '';const t=(f.m.text||(f.m.attachments&&f.m.attachments.length?'[image]':'')).replace(/\*\*|`/g,'').replace(/\s+/g,' ');return '<div class="quoted" onclick="event.stopPropagation();goToMsg(\''+q.thread+'\',\''+q.msg+'\')"><b>'+(f.m.author==='user'?'You':'Claude')+'</b><span>'+esc(t.slice(0,110))+(t.length>110?'…':'')+'</span></div>'}
+function goToMsg(thread,msg){active=thread;sidebar();setTimeout(()=>{const el=document.querySelector('[data-m="'+thread+'|'+msg+'"]');if(el){el.scrollIntoView({block:'center',behavior:'smooth'});el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),1600)}},60)}
+function quoteMsg(thread,msg){quote={thread,msg};if(!target)active=thread;sidebar();const ta=target?$('#newText'):document.getElementById('r-'+thread);ta&&ta.focus()}
+function quoteBox(){return quote?'<div class="quoting">'+quoteHtml(quote)+'<button onclick="event.stopPropagation();quote=null;sidebar()">×</button></div>':''}
+function bubble(m,c,k){if(m.author==='system')return '<div style="align-self:center;font-size:11.5px;color:#8a949c;background:#f3f2ee;border-radius:10px;padding:2px 10px">'+esc(m.text)+' · '+fmtTime(m.at)+'</div>';const cls=m.author==='user'?'user':(m.kind==='edit'?'edit':'claude');const who=m.author==='user'?'':'<div class="who">'+(m.kind==='edit'?'Claude changed the text':'Claude')+'</div>';const im=(m.attachments||[]).map(a=>'<img class="att" src="'+a.url+'" onclick="event.stopPropagation();window.open(\''+a.url+'\')">').join('');const id=msgId(m,k);return '<div class="msg '+cls+'" data-m="'+c.id+'|'+id+'"><button class="quote-btn" title="Reply quoting this" onclick="event.stopPropagation();quoteMsg(\''+c.id+'\',\''+id+'\')">↩</button>'+who+(m.quote?quoteHtml(m.quote):'')+im+(m.text?'<div class="q">'+linkify(m.text)+'</div>':'')+'<span class="time">'+fmtTime(m.at)+'</span></div>'}
+function linkify(t){const toks=[];const keep=h=>'\u0000'+(toks.push(h)-1)+'\u0000';let x=String(t);
+ x=x.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,l,u)=>keep(chip(u,l)));
+ x=x.replace(/https?:\/\/[^\s<>"')\]]+[^\s<>"')\].,;:!?]/g,u=>keep(chip(u)));
+ x=x.replace(/(?:~|\/Users\/[\w.-]+|\/home\/[\w.-]+)\/[^\s<>"'`]+[^\s<>"'`.,;:!?)]/g,u=>keep(chip(u)));
+ return bubbleMd(esc(x)).replace(/\u0000(\d+)\u0000/g,(m,k)=>toks[k])}
+// light markdown inside bubbles: bold, italic, code, headings, lists and tables (the text arrives already escaped)
+function bubbleMd(h){
+ h=h.replace(/((?:^[ \t]*\|.*\|[ \t]*(?:\n|$))+)/gm,blk=>{const rows=blk.trim().split('\n').map(r=>r.trim()).filter(r=>!/^\|[\s:|-]+\|$/.test(r));return '<table class="mt">'+rows.map((r,i)=>'<tr>'+r.slice(1,-1).split('|').map(c=>(i?'<td>':'<th>')+c.trim()+(i?'</td>':'</th>')).join('')+'</tr>').join('')+'</table>'});
+ h=h.replace(/`([^`\n]+)`/g,'<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*\n]*)\*(?=[\s).,;:!?]|$)/gm,'$1<i>$2</i>');
+ h=h.replace(/^#{1,4} +(.+)$/gm,'<b>$1</b>').replace(/^[ \t]*[-*] +/gm,'• ');
+ return h}
+async function copyLink(e,el){e.stopPropagation();e.preventDefault();const u=el.dataset.u;if(e.metaKey||e.ctrlKey||e.button===1){window.open(/^https?:/.test(u)?u:'/view?p='+encodeURIComponent(u),'_blank');return}try{await navigator.clipboard.writeText(u)}catch(_){const ta=document.createElement('textarea');ta.value=u;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}el.classList.add('ok');setTimeout(()=>el.classList.remove('ok'),1200)}
+document.addEventListener('auxclick',e=>{const el=e.target.closest&&e.target.closest('.lk');if(el&&e.button===1)copyLink(e,el)});
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+async function load(){const [d,c,ch]=await Promise.all([api('/doc'),api('/comments'),api('/choices')]);CHOICES=ch||{};const changed=[];d.blocks.forEach(b=>{if(versions[b.id]&&versions[b.id]!==b.v)changed.push(b.id);versions[b.id]=b.v});DOC=d;THREADS=c;$('#openFolder').style.display=d.source?'':'none';draw(changed)}
+function draw(changed){if(editing)return;const pos=saveCaret();const doc=$('#doc');doc.innerHTML='';DOC.blocks.forEach(b=>{const el=document.createElement('div');el.className='blk';el.dataset.b=b.id;el.dataset.t=b.type;el.innerHTML=b.html+'<span contenteditable="false" class="vb'+(b.v>1?' changed':'')+'" title="version '+b.v+' · '+fmtTime(b.at)+' · '+(b.author==='user'?'you':'Claude')+'">v'+b.v+'</span><div class="tools" contenteditable="false"><button tabindex="-1" data-a="c">Comment</button><button tabindex="-1" data-a="h">History</button></div>';if(changed.includes(b.id))el.classList.add('fresh');doc.appendChild(el)});
+ doc.querySelectorAll('.tools button').forEach(bt=>bt.onclick=e=>{e.stopPropagation();const id=bt.closest('.blk').dataset.b;bt.dataset.a==='c'?startComment(id,'',[]):showHistory(id)});
+ doc.querySelectorAll('.blk').forEach(el=>el.ondblclick=()=>editBlock(el.dataset.b));
+ renderFigures();cards();approveAtEnd();sidebar();highlights();updateBar();restoreCaret(pos)}
+function renderFigures(){document.querySelectorAll('canvas[data-chart]').forEach(cv=>{try{new Chart(cv,JSON.parse(cv.dataset.chart))}catch(e){}});if(window.mermaid){try{mermaid.initialize({startOnLoad:false,theme:'neutral'});mermaid.run({querySelector:'.mermaid'})}catch(e){}}}
+function textOf(el){const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest('.tools,.vb')?2:1});let n,s='';const ns=[];while((n=w.nextNode())){ns.push({n,i:s.length});s+=n.nodeValue}return{s,ns}}
+function highlights(){THREADS.filter(c=>!c.resolved).forEach(c=>(c.segments||[]).forEach(sg=>{const el=document.querySelector('.blk[data-b="'+sg.block+'"]');if(!el)return;const {s,ns}=textOf(el);const k=s.indexOf(sg.text);if(k<0)return;const f=k+sg.text.length;ns.forEach(({n,i})=>{const a=Math.max(k,i),b=Math.min(f,i+n.nodeValue.length);if(a>=b)return;const r=document.createRange();r.setStart(n,a-i);r.setEnd(n,b-i);const m=document.createElement('mark');m.className='sel';m.onclick=e=>{e.stopPropagation();active=c.id;sidebar()};try{r.surroundContents(m)}catch(e){}})}));
+ document.querySelectorAll('.blk').forEach(el=>el.classList.toggle('has',THREADS.some(c=>!c.resolved&&c.block===el.dataset.b)))}
+document.addEventListener('mouseup',e=>{const bo=$('#commentSel');if(bo.contains(e.target)||editing)return;setTimeout(()=>{const s=getSelection(),t=s.toString().trim();if(!t||!s.rangeCount){bo.style.display='none';return}const r=s.getRangeAt(0),segs=segmentsOf(r);if(!segs.length){bo.style.display='none';return}const rs=r.getClientRects(),last=rs[rs.length-1]||r.getBoundingClientRect();bo.style.left=Math.min(last.right+scrollX+8,scrollX+document.documentElement.clientWidth-180)+'px';bo.style.top=(last.bottom+scrollY+6)+'px';bo.style.display='block';bo.onclick=()=>{bo.style.display='none';returnTo=endOf(r);getSelection().removeAllRanges();startComment(segs[0].block,segs.map(x=>x.text).join(' … ').slice(0,1500),segs)}},10)});
+function startComment(b,selection,segs){target={b,selection,segs};active=null;sidebar();focusBlock(b);const ta=$('#newText');ta&&ta.focus()}
+function focusBlock(b){document.querySelectorAll('.blk.focus').forEach(x=>x.classList.remove('focus'));const el=document.querySelector('.blk[data-b="'+b+'"]');if(el){el.classList.add('focus');el.scrollIntoView({block:'center',behavior:'smooth'})}}
+async function sendComment(){const t=$('#newText').value.trim();if(!t&&!attachments.length)return;await submit('/comment',{block:target.b,selection:target.selection,segments:target.segs,blockV:versions[target.b],text:t,attachments,quote});attachments=[];quote=null;target=null;const o=readDrafts();delete o.newText;delete o.__target;writeDrafts(o);await load();returnCaret()}
+async function sendReply(id){const ta=document.getElementById('r-'+id),t=ta.value.trim();if(!t&&!attachments.length)return;await submit('/reply',{id,text:t,attachments,quote});attachments=[];quote=null;const o=readDrafts();delete o['r-'+id];writeDrafts(o);await load();returnCaret()}
+function showAttachments(){document.querySelectorAll('.previews').forEach(p=>p.innerHTML=attachments.map(a=>'<img src="'+a.url+'">').join(''))}
+document.addEventListener('paste',async e=>{const ta=document.activeElement;if(!ta||!ta.matches('#threads textarea'))return;const its=[...(e.clipboardData||{}).items||[]].filter(i=>i.type.startsWith('image/'));if(!its.length)return;e.preventDefault();for(const it of its){const f=it.getAsFile();const b64=await new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(f)});const r=await post('/attachment',{data:b64});if(r.url)attachments.push(r)}showAttachments()});
+async function setResolved(id,v){await post('/resolve',{id,resolved:v});load()}
+// drafts: everything typed in a comment box is kept in localStorage and survives redraws and reloads
+const DRAFT_KEY='vibe-ui-draft-'+SLUG;function readDrafts(){try{return JSON.parse(localStorage.getItem(DRAFT_KEY)||'{}')}catch(e){return{}}}function writeDrafts(o){try{localStorage.setItem(DRAFT_KEY,JSON.stringify(o))}catch(e){}}
+document.addEventListener('input',e=>{const t=e.target;if(!t.matches||!t.matches('#threads textarea'))return;const o=readDrafts();o[t.id]=t.value;if(t.id==='newText'&&target)o.__target=target;writeDrafts(o)});
+function hasDraft(){return [...document.querySelectorAll('#threads textarea')].some(t=>t.value.trim())||attachments.length>0}
+function sidebar(){const list=[...THREADS.filter(c=>!c.resolved).slice().reverse(),...THREADS.filter(c=>c.resolved).slice().reverse()],withClaude=THREADS.filter(c=>!c.resolved&&lastReal(c).author==='user').length,nRes=THREADS.filter(c=>c.resolved).length;
+ $('#count').textContent='Comments ('+THREADS.filter(c=>!c.resolved).length+(withClaude?' · '+withClaude+' with Claude':'')+')';$('#countResolved').textContent=nRes?nRes+' resolved at the end of the list':'';
+ let h='';if(target)h+='<div class="thread active"><div class="ref">'+(target.selection?'“'+esc(target.selection)+'”':'Whole block')+'</div>'+quoteBox()+'<textarea id="newText" placeholder="Write, or paste a screenshot (Cmd/Ctrl+V)... Ctrl+Enter sends, Esc goes back to the text"></textarea><div class="previews"></div><div class="actions"><button class="pri" onclick="sendComment()">Comment</button><button class="sec" onclick="target=null;sidebar()">Cancel</button></div></div>';
+ if(!list.length&&!target)h+='<div class="empty"><b>How to use</b><br>Select any passage and click <b>Comment selection</b>, or hover a block and click <b>Comment</b>.<br>Double-click a block to edit its text.<br><b>History</b> shows every version of a block and what changed.<br>Claude answers here and its edits show up live.<br>Press <b>?</b> for the keyboard shortcuts.</div>';
+ list.forEach(c=>{const bl=DOC.blocks.find(x=>x.id===c.block);h+='<div tabindex="0" data-c="'+c.id+'" class="thread'+(c.resolved?' resolved':'')+(active===c.id?' active':'')+'" onclick="active=\''+c.id+'\';focusBlock(\''+c.block+'\');sidebar()"><div class="ref">'+(c.selection?'“'+esc(c.selection)+'”':'Whole block')+(bl&&c.blockV&&bl.v>c.blockV?' <i>(block changed since: v'+bl.v+')</i>':'')+'</div>'+'<div class="convo">'+c.messages.map((m,k)=>bubble(m,c,k)).join('')+'</div>'+(lastReal(c).author==='user'&&!c.resolved?'<div class="status">With Claude</div>':'')+(active===c.id?quoteBox()+'<textarea id="r-'+c.id+'" placeholder="Reply, or paste a screenshot..." onclick="event.stopPropagation()"></textarea><div class="previews"></div><div class="actions"><button class="pri" onclick="event.stopPropagation();sendReply(\''+c.id+'\')">Reply</button><button class="sec" onclick="event.stopPropagation();showHistory(\''+c.block+'\')">Block history</button><button class="sec" onclick="event.stopPropagation();setResolved(\''+c.id+'\','+(!c.resolved)+')">'+(c.resolved?'Reopen':'Resolve')+'</button></div>':'')+'</div>'});
+ h=queueHtml()+h;$('#threads').innerHTML=h;const R=readDrafts();document.querySelectorAll('#threads textarea').forEach(t=>{if(R[t.id])t.value=R[t.id]});showAttachments();document.querySelectorAll('#threads textarea').forEach(t=>t.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();t.id==='newText'?sendComment():sendReply(t.id.slice(2))}else if(e.key==='Escape'){e.preventDefault();if(t.id==='newText'&&!t.value.trim())target=null;active=null;sidebar();returnCaret()}}))}
+async function editBlock(id){const hs=await api('/history?b='+id),md=hs.at(-1).md;editing=id;const el=document.querySelector('.blk[data-b="'+id+'"]');el.innerHTML='<div class="editor" contenteditable="false"><textarea id="editText">'+esc(md)+'</textarea><div class="actions"><button class="pri" id="editSave">Save new version</button><button class="sec" id="editCancel">Cancel</button></div></div>';$('#editText').focus();$('#editCancel').onclick=()=>{editing=null;load()};$('#editSave').onclick=async()=>{const v=$('#editText').value;editing=null;if(v.trim()!==md.trim())await post('/edit',{block:id,md:v});load()}}
+function wordDiff(a,b){const A=a.split(/(\s+)/),B=b.split(/(\s+)/),n=A.length,m=B.length;if(n*m>400000)return esc(b);const L=Array.from({length:n+1},()=>new Uint16Array(m+1));for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)L[i][j]=A[i]===B[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);let i=0,j=0,o='';while(i<n&&j<m){if(A[i]===B[j]){o+=esc(A[i]);i++;j++}else if(L[i+1][j]>=L[i][j+1]){o+='<del>'+esc(A[i])+'</del>';i++}else{o+='<ins>'+esc(B[j])+'</ins>';j++}}while(i<n)o+='<del>'+esc(A[i++])+'</del>';while(j<m)o+='<ins>'+esc(B[j++])+'</ins>';return o}
+async function showHistory(id){const hs=await api('/history?b='+id);let h='<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Block history</h3><button class="sec" style="border:0;border-radius:8px;padding:7px 12px;cursor:pointer" onclick="$(\'#modal\').style.display=\'none\'">Close</button></div>';
+ hs.slice().reverse().forEach((v,k)=>{const prev=hs.find(x=>x.v===v.v-1);h+='<div class="version"><div class="head"><b>Version '+v.v+'</b> · '+fmtTime(v.at)+' · '+(v.author==='user'?'you':'Claude')+(v.reason?' · '+esc(v.reason):'')+(v.comment?' · from a comment':'')+'</div><div style="font-size:14.5px;white-space:pre-wrap">'+(prev?wordDiff(prev.md,v.md):esc(v.md))+'</div>'+(k>0?'<div class="actions"><button class="sec" onclick="restoreVersion(\''+id+'\','+v.v+')">Restore this version</button></div>':'')+'</div>'});
+ $('#modalBox').innerHTML=h;$('#modal').style.display='flex'}
+async function restoreVersion(id,v){await post('/restore',{block:id,v});$('#modal').style.display='none';load()}
+$('#openFolder').onclick=()=>fetch('/reveal?p='+encodeURIComponent(DOC.source));
+$('#copyMd').onclick=async()=>{const t=await fetch('/api/'+SLUG+'/md').then(r=>r.text());try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove()}const b=$('#copyMd');b.textContent='Copied';b.classList.add('ok');setTimeout(()=>{b.textContent='Copy .md';b.classList.remove('ok')},1500)};
+$('#modal').onclick=e=>{if(e.target.id==='modal')e.target.style.display='none'};
+// live updates: server-sent events; a redraw waits while the user is typing or has a draft
+let es=null,tick=null;const LIVE=!location.search.includes('static');
+function disconnect(){if(es){es.close();es=null}$('#live').classList.remove('on')}
+function connect(){if(es||document.hidden||!LIVE)return;es=new EventSource('/api/'+SLUG+'/events');es.onopen=()=>$('#live').classList.add('on');es.onmessage=e=>{if(e.data!=='changed')return;if(target||hasDraft()||document.activeElement.matches('textarea')){window.__pending=true;return}load()};if(!tick)tick=setInterval(()=>{if(window.__pending&&!target&&!hasDraft()&&!document.activeElement.matches('textarea')){window.__pending=false;load()}},2000);es.onerror=()=>{disconnect();setTimeout(connect,3000)}}
+// a hidden tab drops its connection (browsers allow only 6 per host); when it comes back it reconnects and refreshes
+document.addEventListener('visibilitychange',()=>{if(document.hidden)disconnect();else{window.__pending=true;connect()}});
+
+// ===== choices, cards and keyboard =====
+function cards(){
+  // a question is an h3 (or h2) followed, within 3 blocks, by a list of choices; the card spans from the heading to the list
+  const els=[...document.querySelectorAll('#doc > .blk')];
+  els.forEach((el,i)=>{
+    if(el.dataset.t!=='choice')return;
+    let k=i-1;while(k>=0&&i-k<=3&&!/^h[23]$/.test(els[k].dataset.t)&&els[k].dataset.t!=='choice')k--;
+    if(k<0||!/^h[23]$/.test(els[k].dataset.t))k=i;
+    const box=document.createElement('section');box.className='card';
+    const queued=readQueue().find(x=>x.u==='/choose'&&x.b.block===el.dataset.b);const answered=!!CHOICES[el.dataset.b]&&!queued;if(answered)box.classList.add('answered');if(queued)box.classList.add('queued');
+    box.innerHTML='<span class="badge" contenteditable="false">'+(queued?'queued, not sent yet':answered?'answered':'tick your choice')+'</span>';
+    els[k].before(box);for(let j=k;j<=i;j++)box.appendChild(els[j]);
+    const ins=[...el.querySelectorAll('.choices input')];
+    const state=queued?queued.b:CHOICES[el.dataset.b];
+    ins.forEach((inp,j)=>{inp.checked=state?state.checked.includes(j):!!inp.dataset.pre;if(inp.type==='radio')inp.name='r-'+el.dataset.b;
+      inp.addEventListener('change',()=>onChoice(el.dataset.b))});
+    el.querySelectorAll('.choices .opt').forEach(op=>op.addEventListener('mousedown',e=>e.stopPropagation()));
+  });
+}
+let chooseTimer={};
+function onChoice(b){
+  const el=document.querySelector('.blk[data-b="'+b+'"]');
+  const checked=checkedOf(el);
+  CHOICES[b]={checked};const box=el.closest('.card');if(box){box.classList.add('answered');box.querySelector('.badge').textContent='answered'}
+  if(sendNow()){clearTimeout(chooseTimer[b]);chooseTimer[b]=setTimeout(()=>post('/choose',{block:b,checked}),350);updateBar()}else{const Q=readQueue().filter(x=>!(x.u==='/choose'&&x.b.block===b));Q.push({u:'/choose',b:{block:b,checked},t:Date.now()});writeQueue(Q);if(box){box.classList.add('queued');box.querySelector('.badge').textContent='queued, not sent yet'}updateBar()}
+}
+// caret in the text: #doc becomes a navigable area (arrows, Ctrl+Shift+arrows select) that does not accept typing
+function prepareText(){
+  const d=$('#doc');d.setAttribute('contenteditable','true');d.setAttribute('spellcheck','false');d.setAttribute('tabindex','0');
+  ['beforeinput','drop','cut'].forEach(ev=>d.addEventListener(ev,e=>{if(!e.target.closest('textarea'))e.preventDefault()}));
+  d.addEventListener('paste',e=>{if(!e.target.closest('textarea'))e.preventDefault()});
+}
+function blockOf(n){n=n&&(n.nodeType===3?n.parentElement:n);return n&&n.closest&&n.closest('.blk')}
+function inText(){const s=getSelection();return s.rangeCount&&$('#doc').contains(s.anchorNode)&&!(document.activeElement&&document.activeElement.matches('textarea,input'))}
+function segmentsOf(r){const segs=[];document.querySelectorAll('.blk').forEach(el=>{if(!r.intersectsNode(el))return;const sub=document.createRange();sub.selectNodeContents(el);if(el.contains(r.startContainer))sub.setStart(r.startContainer,r.startOffset);if(el.contains(r.endContainer))sub.setEnd(r.endContainer,r.endOffset);const frag=sub.cloneContents();frag.querySelectorAll('.tools,.vb,.choices').forEach(x=>x.remove());const tx=frag.textContent.trim();if(tx)segs.push({block:el.dataset.b,text:tx})});return segs}
+function endOf(r){const b=blockOf(r.endContainer);if(!b)return null;const {s,ns}=textOf(b);let off=0;for(const x of ns){if(x.n===r.endContainer){off=x.i+r.endOffset;break}}if(r.endContainer.nodeType!==3)off=s.length;return {b:b.dataset.b,off}}
+function caretAt(b,off){const el=document.querySelector('.blk[data-b="'+b+'"]');if(!el)return false;const {ns}=textOf(el);let node=null,o=0;for(const x of ns){if(x.n.parentElement.closest('.choices'))continue;node=x;o=x.n.nodeValue.length;if(off<=x.i+x.n.nodeValue.length){o=Math.max(0,off-x.i);break}}if(!node)return false;
+  $('#doc').focus({preventScroll:true});const r=document.createRange();r.setStart(node.n,o);r.collapse(true);const s=getSelection();s.removeAllRanges();s.addRange(r);markCurrent(el);el.scrollIntoView({block:'nearest',behavior:'smooth'});return true}
+// after a comment, the caret goes to the line below the passage (or to the start of the next block)
+function returnCaret(){const v=returnTo;returnTo=null;if(!v)return;const el=document.querySelector('.blk[data-b="'+v.b+'"]');if(!el)return;
+  const {s}=textOf(el);if(v.off>=s.trim().length){const next=nextBlock(el,1);if(next){caretAt(next.dataset.b,0);return}}caretAt(v.b,v.off);const sl=getSelection(),r0=sl.getRangeAt(0).getBoundingClientRect();sl.modify('move','forward','line');sl.modify('move','backward','lineboundary');const r1=sl.rangeCount&&sl.getRangeAt(0).getBoundingClientRect();if(!r1||r1.top<=r0.top+2||!el.contains(sl.anchorNode)){const next=nextBlock(el,1);next&&caretAt(next.dataset.b,0)}}
+function blockEls(){return [...document.querySelectorAll('#doc .blk')]}
+function nextBlock(el,dir){const L=blockEls();const i=L.indexOf(el);return L[i+dir]||null}
+function markCurrent(el){document.querySelectorAll('.blk.cur').forEach(x=>x!==el&&x.classList.remove('cur'));el&&el.classList.add('cur')}
+function saveCaret(){if(!inText())return null;const r=getSelection().getRangeAt(0);return endOf(r)}
+function restoreCaret(p){if(p)caretAt(p.b,p.off)}
+function commentSelection(){const s=getSelection();if(!s.rangeCount)return false;const r=s.getRangeAt(0);
+  if(r.collapsed){const b=blockOf(r.startContainer);if(!b)return false;returnTo=endOf(r);startComment(b.dataset.b,'',[]);return true}
+  const segs=segmentsOf(r);if(!segs.length)return false;returnTo=endOf(r);$('#commentSel').style.display='none';s.removeAllRanges();startComment(segs[0].block,segs.map(x=>x.text).join(' … ').slice(0,1500),segs);return true}
+function showShortcuts(){const T=[[['Tab','Shift+Tab'],'next / previous: text, choice options, comments'],[['↑','↓','←','→'],'move the caret in the text'],[['Ctrl+↑','Ctrl+↓'],'previous / next block'],[['Shift+arrows','Ctrl+Shift+arrows'],'select by character / by word'],[['Tab'],'with text selected: comment on the selection'],[['Enter'],'in the text: comment on the whole block'],[['Ctrl+Enter'],'send the comment and put the caret on the next line'],[['Ctrl+Shift+Enter'],'send everything in the queue'],[['Esc'],'leave the comment box and go back to the text'],[['Space'],'tick an option (checkbox and switch)'],[['↑','↓'],'in the options: change a single choice'],[['E'],'edit the block under the caret'],[['H'],'history of the block under the caret'],[['?'],'this list']];
+  $('#modalBox').innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Keyboard</h3><button class="sec" style="border:0;border-radius:8px;padding:7px 12px;cursor:pointer" onclick="$(\'#modal\').style.display=\'none\'">Close</button></div><table class="keys" style="margin-top:12px">'+T.map(t=>'<tr><td>'+t[0].map(k=>'<kbd>'+esc(k)+'</kbd>').join(' ')+'</td><td>'+esc(t[1])+'</td></tr>').join('')+'</table>';$('#modal').style.display='flex'}
+document.addEventListener('keydown',e=>{
+  if($('#modal').style.display==='flex'){if(e.key==='Escape'){$('#modal').style.display='none';e.preventDefault()}return}
+  const at=document.activeElement;
+  if(at&&at.matches('textarea'))return;
+  if(at&&at.matches('.choices input')){ if(e.key==='Enter'){e.preventDefault();at.click()} return }
+  if(at&&at.classList&&at.classList.contains('thread')&&e.key==='Enter'){e.preventDefault();at.click();setTimeout(()=>{const t=document.getElementById('r-'+at.dataset.c);t&&t.focus()},30);return}
+  if(!inText())return;
+  const s=getSelection();const r=s.getRangeAt(0);
+  if(e.key==='Tab'&&!e.shiftKey&&!r.collapsed){e.preventDefault();commentSelection();return}
+  if(e.key==='Enter'&&!e.metaKey&&!e.ctrlKey){e.preventDefault();commentSelection();return}
+  if(e.ctrlKey&&!e.shiftKey&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();const b=blockOf(r.startContainer);const p=b&&nextBlock(b,e.key==='ArrowDown'?1:-1);p&&caretAt(p.dataset.b,0);return}
+  if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='e'||e.key==='h'||e.key==='?')){e.preventDefault();if(e.key==='?')return showShortcuts();const b=blockOf(r.startContainer);if(b)e.key==='e'?editBlock(b.dataset.b):showHistory(b.dataset.b);return}
+});
+// Ctrl+Shift+arrow selects a word on Windows and Linux; on a Mac the native key is Alt+Shift, so accept both there
+document.addEventListener('keydown',e=>{if(!inText()||!e.ctrlKey||!e.shiftKey||!/^Arrow(Left|Right)$/.test(e.key)||!/Mac/.test(navigator.platform))return;e.preventDefault();getSelection().modify('extend',e.key==='ArrowLeft'?'backward':'forward','word')},true);
+document.addEventListener('selectionchange',()=>{if(inText()){const b=blockOf(getSelection().focusNode);b&&markCurrent(b)}});
+prepareText();
+
+// ===== send queue and approve decisions =====
+const QUEUE_KEY='vibe-ui-queue-'+SLUG,SEND_NOW_KEY='vibe-ui-send-now';
+function readQueue(){try{return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]')}catch(e){return[]}}
+function writeQueue(Q){try{localStorage.setItem(QUEUE_KEY,JSON.stringify(Q))}catch(e){}}
+function sendNow(){try{return localStorage.getItem(SEND_NOW_KEY)!=='0'}catch(e){return true}}
+async function submit(u,b){if(sendNow())return post(u,b);const Q=readQueue();Q.push({u,b,t:Date.now()});writeQueue(Q);updateBar()}
+function unanswered(){return [...document.querySelectorAll('#doc .blk[data-t="choice"]')].filter(el=>!CHOICES[el.dataset.b]&&!readQueue().some(x=>x.u==='/choose'&&x.b.block===el.dataset.b))}
+function updateBar(){const Q=readQueue(),n=unanswered().length;const bS=$('#send'),bA=$('#approve');$('#sendNow').checked=sendNow();
+  bS.style.display=sendNow()&&!Q.length?'none':'';bS.textContent='Send'+(Q.length?' ('+Q.length+')':'');bS.disabled=!Q.length;
+  bA.style.display=document.querySelector('#doc .blk[data-t="choice"]')?'':'none';bA.textContent=n?'Approve decisions ('+n+')':'Decisions answered';bA.disabled=!n;
+  const bf=$('#approveEnd');if(bf){bf.parentElement.style.display=n?'':'none';bf.textContent='Approve decisions ('+n+')'}}
+function approveAtEnd(){const cs=document.querySelectorAll('#doc .card');if(!cs.length)return;const d=document.createElement('div');d.className='approve-end';d.setAttribute('contenteditable','false');d.innerHTML='<button id="approveEnd"></button>';cs[cs.length-1].after(d);d.querySelector('button').onclick=approveAll}
+function checkedOf(el){return [...el.querySelectorAll('.choices input')].map((x,j)=>x.checked?j:-1).filter(j=>j>=0)}
+async function approveAll(){const Q=readQueue();unanswered().forEach(el=>Q.push({u:'/choose',b:{block:el.dataset.b,checked:checkedOf(el)},t:Date.now()}));writeQueue(Q);await sendQueue()}
+async function sendQueue(){const Q=readQueue();if(!Q.length)return;const bS=$('#send');bS.disabled=true;bS.textContent='Sending...';
+  for(const it of Q){await post(it.u,it.b);writeQueue(readQueue().filter(x=>x.t!==it.t||x.u!==it.u))}
+  await load();updateBar()}
+function unqueue(t){writeQueue(readQueue().filter(x=>String(x.t)!==String(t)));load()}
+function queueHtml(){const Q=readQueue().filter(x=>x.u!=='/choose');if(!Q.length)return '';
+  return Q.map(x=>{const c=x.u==='/reply'?THREADS.find(k=>k.id===x.b.id):null;const ref=c?(c.selection?'“'+esc(c.selection)+'”':'Whole block'):(x.b.selection?'“'+esc(x.b.selection)+'”':'Whole block');
+    return '<div class="thread queued"><button title="Remove from the queue" onclick="event.stopPropagation();unqueue(\''+x.t+'\')">×</button><div class="tag">QUEUED · '+(c?'reply':'new comment')+'</div><div class="ref">'+ref+'</div><div class="convo"><div class="msg user"><div class="q">'+linkify(x.b.text||'[image]')+'</div></div></div></div>'}).join('')}
+$('#sendNow').onchange=e=>{try{localStorage.setItem(SEND_NOW_KEY,e.target.checked?'1':'0')}catch(_){};if(e.target.checked&&readQueue().length)sendQueue();updateBar()};
+$('#send').onclick=sendQueue;$('#approve').onclick=approveAll;
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&e.shiftKey){e.preventDefault();sendQueue()}},true);
+
+load().then(()=>{const R=readDrafts();if(R.__target&&R.newText){target=R.__target;sidebar()}connect()});
+</script></body></html>
