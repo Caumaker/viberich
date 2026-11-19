@@ -1,6 +1,6 @@
 ---
 name: Bug
-about: Something does not work
+about: Something does not work as described
 labels: bug
 ---
 **What happened**
@@ -8,5 +8,9 @@ labels: bug
 **What you expected**
 
 **Steps to reproduce**
+1.
+2.
 
-**Environment** (OS, browser, Node version)
+**Environment** (OS, browser and version, Node version, Vibe Rich UI version from `vibe-ui version`)
+
+**Server output or browser console errors**, if any

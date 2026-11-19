@@ -145,7 +145,7 @@ function choose(slug, blockId, checked) {
   CH[blockId] = { checked, labels: checked.map((k) => plain(ops[k].text)), v: latest(blk).v, at: now() };
   writeChoices(slug, CH);
   const title = questionTitle(d, blockId);
-  const text = (title ? title + ': ' : '') + (checked.length ? checked.map((k) => (ops[k].type === 'switch' ? 'on: ' : '') + plain(ops[k].text)).join(' | ') : 'cleared every option');
+  const text = (title ? title + ' → ' : '') + (checked.length ? checked.map((k) => (ops[k].type === 'switch' ? 'on: ' : '') + plain(ops[k].text)).join(' | ') : 'cleared every option');
   const C = readComments(slug);
   let c = C.find((x) => x.block === blockId && x.kind === 'choice' && !x.resolved);
   const msg = { id: newId('m'), author: 'user', kind: 'choice', text, at: now() };

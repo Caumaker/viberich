@@ -75,7 +75,7 @@ async function step(name, fn) {
     await step('a ticked choice reaches Claude at once (Send instantly)', async () => {
       await page.click(`.blk[data-b="${q1}"] .opt:nth-child(2)`);
       await until(async () => (await api('choices'))[q1]?.checked.join() === '1', 'the choice on the server');
-      assert.match(cli('pending', 'demo'), /request: D1: Which database do we start with\?: SQLite on the app server/);
+      assert.match(cli('pending', 'demo'), /request: D1: Which database do we start with\? → SQLite on the app server/);
       assert.match(cli('choices', 'demo'), /\[x\] SQLite on the app server/);
       await page.waitForFunction(() => $('#approve').textContent === 'Approve decisions (2)', { timeout: 3000 });
     });
@@ -161,7 +161,7 @@ async function step(name, fn) {
       assert.strictEqual(await page.$$eval('.card.answered', (c) => c.length), 3);
       const ch = cli('choices', 'demo');
       assert.ok(!ch.includes('NO ANSWER YET'), 'every question answered'); assert.match(ch, /\[x\] Read replica/);
-      assert.match(cli('pending', 'demo'), /D3: What do we turn on now\?: on: Point-in-time recovery/);
+      assert.match(cli('pending', 'demo'), /D3: What do we turn on now\? → on: Point-in-time recovery/);
     });
 
     await step('CLI pending lists what waits for Claude and drops answered threads', async () => {

@@ -1,35 +1,46 @@
 ---
-name: replica
-description: Every long answer for the user (report, plan, analysis, comparison, answer with tables or decisions) becomes a local commentable document at http://localhost:7743/<slug>. The user selects passages, comments and ticks choices; you answer in the thread and edit the block, and each edit becomes a version. Trigger: any long deliverable, "/replica", "publish it so I can comment".
+name: vibe-ui
+description: Publish every long answer for the user (report, plan, design review, comparison, analysis, answer with tables or decisions) as a local commentable document at http://localhost:7743/<slug> instead of a wall of text. The user selects passages, comments and ticks choices; you answer in the thread and edit the block, and each edit becomes a version. Trigger: any long deliverable, a decision with options, "/vibe-ui", "publish it so I can comment".
 ---
 
-# replica: a document the user comments and you answer
+# Vibe Rich UI: a document the user answers by selecting and ticking
+
+Use it whenever your answer is longer than a screen, has a table, or asks the user to decide something. The terminal gets one line with the link; the conversation happens on the page.
 
 ## Publish
-1. Write a well-structured `.md` in the project folder (it stays as the source).
-2. `replica publicar <slug> <file.md>` (short slug, lowercase and hyphens). `--forcar` recreates it and drops history: only if the user asks.
-3. Open `http://localhost:7743/<slug>` and say one line in the terminal with the link. Nothing else in the terminal.
-4. Keep `replica esperar 3500` running in the background. When it fires, handle the comments and start it again.
+
+1. Write a well-structured `.md` (in the project folder when it belongs to the project, otherwise in a scratch folder).
+2. Publish it: `vibe-ui publish <slug> <file.md>` (short slug, lowercase letters and hyphens), or the MCP tool `publish`. `--force` recreates the document and drops its history: only when the user asks.
+3. Open `http://localhost:7743/<slug>` (MCP tool `open`) and write one line in the terminal with the link. Nothing else.
+4. Keep `vibe-ui wait 3500` running in the background. When it returns, handle what arrived and start it again.
+
+If the server is not running, start it with `vibe-ui serve` in the background.
 
 ## Decisions are things to tick
-Under `### S1: question`, write the options as a list:
-- `- ( ) option` single choice, `- (*) option` pre-selected (use it for your recommendation)
-- `- [ ] option` multiple choice, `- [x]` pre-selected
-- `- {off} option` on/off switch, `- {on}` pre-selected
-Keep each option's reason on its own line. A question the user leaves untouched follows the pre-selected option. `replica escolhas <slug>` shows the state of every question.
+
+Right under a `### D1: question` heading, write the options as a list:
+
+- `- ( ) option` single choice, `- (*) option` pre-selected
+- `- [ ] option` multiple choice, `- [x] option` pre-selected
+- `- {off} option` on/off switch, `- {on} option` pre-selected
+
+Pre-select your recommendation and say why in the option text (`(recommended): reason`). One question per heading, options short and parallel. The user can press **Approve decisions** to accept every question they did not touch, so a pre-selected option must be one you would really act on. `vibe-ui choices <slug>` shows the state of every question; each tick also arrives in `pending` as a message like `D1: question → option`.
 
 ## Answer comments
-- `replica pendentes` shows each comment: selection, request, current block text, quoted message and pasted images (read the image file before answering).
-- Question: `replica responder <comment> "<answer>"`, short, with numbers and sources. Long answer: write it to a file and use `@file.md` (light markdown renders in the bubble).
-- Text change: `replica editar <slug> <block> @new.md --motivo "<what changed>"`. The change applies to the whole block, so rewrite it coherently. If it affects other blocks, edit them too.
-- Several changes from one comment: edit without `--comentario` and send ONE consolidated answer at the end listing what changed and where.
-- New block: `replica inserir <slug> <afterId> @new.md`. Remove: `replica remover` (hides; history keeps it).
-- Never resolve a thread yourself: the user does.
 
-## Writing the .md
+- `vibe-ui pending` lists every thread waiting for you: the selected passage, the request, the quoted message, pasted images (read the image file before answering) and the current text of the block.
+- A question: `vibe-ui reply <comment> "<answer>"`, short, with numbers and sources. For a long answer write a file and pass `@file.md` (light markdown renders in the bubble). `--quote <messageId>` quotes a message of the thread.
+- A change: `vibe-ui edit <slug> <block> @new.md --comment <comment> --reason "<what changed>"`. The edit replaces the whole block, so rewrite it coherently. If the change affects other blocks, edit them too.
+- Several changes from one comment: edit each block (with `--comment` on the main one) and send ONE reply at the end listing what changed and where.
+- A new block: `vibe-ui insert <slug> <afterBlock> @new.md`. Remove: `vibe-ui remove <slug> <block>` (hides it; the history keeps it).
+- A tick on a choice card usually needs no reply: act on it, or reply only when the choice changes the plan.
+- Never resolve a thread yourself. The user does.
+
+## Writing the markdown
+
 - First line `# Title`, then one sentence with the conclusion.
-- `> ` for the summary and highlights; `## ` per section, each opening with its answer.
+- `> ` for the summary and other callouts; one `## ` per section, each opening with its answer.
 - Tables to compare; lists only for parallel items; short sentences.
-- Charts: ```chart with a Chart.js config in JSON. Diagrams: ```mermaid or raw `<svg>` on one line.
-- One idea per block: each paragraph, list, table and figure is a commentable block with its own history.
+- Charts: a ```chart block with a Chart.js config in JSON (add `"maintainAspectRatio": false`). Diagrams: ```mermaid, or raw `<svg>` on one line.
+- One idea per block: each paragraph, list, table and figure is a commentable block with its own history, so keep paragraphs focused.
 - Sources at the end, with links.
