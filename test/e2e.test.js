@@ -107,6 +107,15 @@ async function step(name, fn) {
       assert.deepStrictEqual(await page.evaluate(() => [document.activeElement.id, !!$('#newText')]), ['doc', false]);
     });
 
+    await step('mouse: option text can be selected and commented without ticking it', async () => {
+      const box = await page.evaluate((id) => { const tx = document.querySelectorAll('.blk[data-b="' + id + '"] .opt .tx')[2]; tx.scrollIntoView({ block: 'center' }); const r = tx.getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2, w: r.width }; }, q1);
+      await page.mouse.move(box.x + 2, box.y); await page.mouse.down(); await page.mouse.move(box.x + Math.min(120, box.w - 2), box.y, { steps: 6 }); await page.mouse.up();
+      await page.waitForSelector('#commentSel', { visible: true });
+      const s = await page.evaluate((id) => ({ sel: getSelection().toString(), checked: [...document.querySelectorAll('.blk[data-b="' + id + '"] .opt input')].map((i) => i.checked).join() }), q1);
+      assert.ok(s.sel.length > 3, 'the option text is selected'); assert.strictEqual(s.checked, 'false,true,false', 'dragging did not change the choice');
+      await page.evaluate(() => { getSelection().removeAllRanges(); $('#commentSel').style.display = 'none'; });
+    });
+
     await step('mouse: "Comment selection" puts the caret in the comment box', async () => {
       const box = await page.evaluate((id) => { const p = document.querySelector('.blk[data-b="' + id + '"] p'); p.scrollIntoView({ block: 'center' }); const r = p.getBoundingClientRect(); return { x: r.x, y: r.y + 12 }; }, ids.intro);
       await page.mouse.move(box.x + 2, box.y); await page.mouse.down(); await page.mouse.move(box.x + 220, box.y, { steps: 6 }); await page.mouse.up();
