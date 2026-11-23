@@ -6,7 +6,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 const ROOT = process.env.VIBERICH_DIR || path.join(os.homedir(), '.viberich', 'docs');
 const PORT = Number(process.env.VIBERICH_PORT) || 7743;
 const HOME = os.homedir();
@@ -93,6 +93,17 @@ function split(md) {
   return B;
 }
 
+// pending lines for a comment made in a 3D scene: parts by exact name, poses, annotations, section cut and measures
+function scene3dText(z) {
+  let o = '';
+  const parts = z.parts && z.parts.length ? z.parts : z.part ? [{ name: z.part, cadName: z.cadName, assembly: z.assembly, path: z.path, point: z.point }] : [];
+  o += `  3D${z.kind === 'annotation' ? ' annotation' : ''}: step ${z.step || '?'} "${z.stepTitle || ''}", camera ${JSON.stringify(z.camera)}${z.isolated ? ', isolated' : ''}${z.section ? `, section ${z.section.axis} = ${z.section.v} mm${z.section.inv ? ' (other side)' : ''}` : ''}\n`;
+  parts.forEach((q) => { o += `    part: ${q.cadName || q.name}${q.assembly ? ' (' + q.assembly + ')' : ''}${q.path ? ' path ' + q.path : ''}${q.point ? ' point ' + JSON.stringify(q.point) + ' mm' : ''}\n`; });
+  (z.measures || []).forEach((m, i) => { o += `    measure M${i + 1}: ${m.dist} mm from ${JSON.stringify(m.a)} to ${JSON.stringify(m.b)}\n`; });
+  (z.poses || []).forEach((p) => { o += `    pose ${p.pose}: camera ${JSON.stringify(p.camera)}${p.section ? ', section ' + p.section.axis + '=' + p.section.v : ''}${p.isolated ? ', isolated' : ''}${p.image ? ', image ' + p.image : ''}\n`;
+    (p.annotations || []).forEach((a) => { o += `      ${a.kind}${a.n ? ' ' + a.n : ''}${a.text ? ': ' + a.text : ''}\n`; }); });
+  return o;
+}
 function render(md) {
   const L = md.split('\n'); const first = L[0]; let m;
   if (first.startsWith('```chart')) return { type: 'chart', html: `<div class="fig chart"><canvas data-chart='${esc(L.slice(1, -1).join('\n')).replace(/'/g, '&#39;')}'></canvas></div>` };
@@ -389,7 +400,7 @@ else if (cmd === 'publish') {
         if (m) quoted = `  quoting (${m.author === 'user' ? 'the user' : 'you'}): ${String(m.text).slice(0, 200)}\n`;
       }
       const images = x.messages.filter((m) => m.author === 'user').flatMap((m) => m.attachments || []).map((att) => '  image: ' + att.path + '\n').join('')
-        + (x.segments || []).filter((g) => g.scene).map((g) => `  3D: part ${g.scene.part}${g.scene.assembly ? ' (' + g.scene.assembly + ')' : ''}, step ${g.scene.step} "${g.scene.stepTitle || ''}", point ${JSON.stringify(g.scene.point)} mm, camera ${JSON.stringify(g.scene.camera)}\n`).join('');
+        + (x.segments || []).filter((g) => g.where).slice(0, 1).map((g) => `  where: ${g.where}\n`).join('') + (x.segments || []).filter((g) => g.scene).map((g) => scene3dText(g.scene)).join('');
       const blockText = blk ? latest(blk).md.split('\n').map((l) => '    ' + l).join('\n') : '';
       console.log(`[${s}] comment=${x.id} block=${x.block} (v${blk ? latest(blk).v : '?'})\n  selection: ${x.selection || '(whole block)'}\n  request: ${last.text}\n${quoted}${images}  current block text:\n${blockText}\n`);
     }

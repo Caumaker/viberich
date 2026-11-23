@@ -108,12 +108,18 @@ A ` ```scene3d ` block turns a glTF/GLB model into an explorable scene inside th
 - **Tour**: steps with title and text, camera moves, highlighted parts (the rest turns into a ghost), parts that move or vibrate, and an explode slider.
 - **Explanations**: click a part to read what it is (`parts` in the JSON, matched by name).
 - **Questions on the model**: *Comment / ask* opens a normal thread pinned to the part. `viberich pending` shows the part, the clicked point, the step and the camera, so Claude knows exactly what you looked at.
+- **Pick mode**: hover shows the exact node name from the CAD file; click to pick one or more parts, then isolate, frame or comment on just them.
+- **Section and ruler**: cut the model with a plane in X, Y or Z, and click two points to measure the distance in mm.
+- **2D annotation on snapshots**: take a snapshot of the pose and draw circles, arrows with numbered bubbles, text and free strokes; *Label* adds an arrow with the exact name of every picked part and every measure. Change the pose and take more snapshots in the same annotation. *Send to comments* uploads the annotated images and opens a thread that keeps the parts, poses, cut, measures and every bubble text; the ✎ pin on the model brings the pose back.
+- **Selection anywhere**: text selected anywhere on the page, the 3D panels included, records where it came from (block and section, thread, scene step or part) and `pending` prints it as `where:`.
 - **Editor**: save the current view to a step, add steps and notes, highlight parts, write explanations, then *Save version*: a new version of the block, with history like any other block.
 
 ```bash
 viberich publish table3d examples/scene3d/table.md
 viberich model table3d examples/scene3d/table.glb
 ```
+
+![3D annotation](docs/screenshot-3d-annotation.png)
 
 The JSON uses millimetres with Z up (CAD convention): `title`, `model`, `hide`, `parts {MARK: {label, text}}`, `notes [{point, text, step}]`, `steps [{title, text, camera {pos, target}, highlight, hide, color, move {key: [dx, dy, dz]}, vibrate {key: {axis, amp, hz}}, explode, dur, hold}]`. A key matches a node name, or its prefix before `_`, `:` or a space. three.js loads from jsDelivr, like Chart.js and Mermaid.
 
