@@ -18,6 +18,7 @@ const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const mark = (n) => String(n || '').split(/[_ :(]/)[0];
 const matches = (name, k) => name === k || name.startsWith(k + '_') || name.startsWith(k + ':') || name.startsWith(k + ' ');
 const modelUrl = (m) => (/^(https?:)?\//.test(m) ? m : `/m/${SLUG}/${encodeURIComponent(m)}`);
+const SHAPES = { pen: ['✎', 'Freehand'], circ: ['◯', 'Circle'], rect: ['▢', 'Rectangle'] };
 const CORES = ['#e0262b', '#f08c00', '#1d63a6', '#2f9e44', '#222222'];
 function loadModel(url) {
   if (!CACHE.has(url)) CACHE.set(url, new Promise((ok, error) => loader.load(url, (g) => {
@@ -308,21 +309,29 @@ class Scene {
   }
   openAnnotator() {
     const S = this.ses; S.open = true; const F = S.shots[S.current]; const VW = 1000, VH = Math.round(1000 * F.h / F.w);
-    this.tool = this.tool || 'arrow'; this.color = this.color || CORES[0];
+    this.tool = this.tool || 'arrow'; this.color = this.color || CORES[0]; this.shape = SHAPES[this.shape] ? this.shape : 'pen';
     const el = this.$('.v3d-anot'); el.style.display = 'flex';
     el.innerHTML = `<div class="v3d-afer">
-        ${[['arrow', '↗ Arrow + bubble'], ['circ', '◯ Circle'], ['text', 'T Text'], ['pen', '✎ Pen'], ['erase', '⌫ Erase']].map(([k, r]) => `<button data-f="${k}" class="${this.tool === k ? 'on' : ''}">${r}</button>`).join('')}
+        <button data-f="arrow" class="ic ${this.tool === 'arrow' ? 'on' : ''}" title="Arrow with bubble: drag from the part to the bubble and type">↗</button><span class="v3d-fgrp"><button data-f="shape" class="ic ${SHAPES[this.shape] && this.tool === this.shape ? 'on' : ''}" title="${SHAPES[this.shape][1]} (hold or click ▾ to switch: freehand, circle, rectangle)">${SHAPES[this.shape][0]}<b class="v3d-fmore">▾</b></button><span class="v3d-fmenu">${Object.entries(SHAPES).map(([k, [ic, r]]) => `<button data-shape="${k}" class="ic ${this.shape === k ? 'on' : ''}" title="${r}">${ic}</button>`).join('')}</span></span><button data-f="text" class="ic ${this.tool === 'text' ? 'on' : ''}" title="Text">T</button><button data-f="erase" class="ic ${this.tool === 'erase' ? 'on' : ''}" title="Erase: click a mark">⌫</button>
         <span class="v3d-colors2">${CORES.map((c) => `<i data-c="${c}" style="background:${c}" class="${this.color === c ? 'on' : ''}"></i>`).join('')}</span>
-        <button data-f="undo" title="Undo the last one">↶</button>${F.auto && F.auto.length ? '<button data-f="auto" title="Arrow and bubble with the exact name of each picked part and each measure">🏷 Label</button>' : ''}<span class="v3d-spacer"></span>
-        <span class="v3d-aid">pose ${S.current + 1} of ${S.shots.length}</span><button data-f="close" title="Back to 3D to change the pose">↺ New pose</button></div>
+        <button data-f="undo" class="ic" title="Undo the last one">↶</button>${F.auto && F.auto.length ? '<button data-f="auto" class="ic" title="Label: arrow and bubble with the exact name of every picked part and every measure">🏷</button>' : ''}<span class="v3d-spacer"></span>
+        <span class="v3d-aid">pose ${S.current + 1} of ${S.shots.length}</span><button data-f="close" class="ic" title="New pose: back to 3D to turn and take another snapshot">↺</button></div>
       <div class="v3d-apalco"><div class="v3d-afig" style="aspect-ratio:${F.w}/${F.h}"><img src="${F.img}" draggable="false"><svg viewBox="0 0 ${VW} ${VH}"></svg></div></div>`;
     const fig = el.querySelector('.v3d-afig'), svg = el.querySelector('svg');
     this.anotVW = VW; this.anotVH = VH; this.svg = svg; this.fig = fig;
     const fit = () => { const pal = el.querySelector('.v3d-apalco'); const r = pal.getBoundingClientRect(); const k = Math.min(r.width / F.w, r.height / F.h); fig.style.width = F.w * k + 'px'; fig.style.height = F.h * k + 'px'; };
     fit(); (this.roAnot && this.roAnot.disconnect()); this.roAnot = new ResizeObserver(fit); this.roAnot.observe(el);
+    const grp = el.querySelector('.v3d-fgrp'), bF = grp.querySelector('[data-f=shape]'); let tHold = null, heldOpen = false;
+    const menu = (on) => grp.classList.toggle('open', on ?? !grp.classList.contains('open'));
+    bF.onpointerdown = () => { heldOpen = false; tHold = setTimeout(() => { heldOpen = true; menu(true); }, 350); };
+    bF.onpointerup = bF.onpointerleave = () => clearTimeout(tHold);
+    bF.oncontextmenu = (e) => { e.preventDefault(); menu(true); };
     el.querySelector('.v3d-afer').onclick = (e) => {
+      const fm = e.target.closest('[data-shape]'); if (fm) { this.shape = fm.dataset.shape; this.tool = this.shape; this.openAnnotator(); return; }
+      if (e.target.closest('.v3d-fmore')) { menu(); return; }
+      if (e.target.closest('[data-f=shape]')) { if (heldOpen) { heldOpen = false; return; } menu(false); }
       const c = e.target.closest('[data-c]'); if (c) { this.color = c.dataset.c; el.querySelectorAll('[data-c]').forEach((x) => x.classList.toggle('on', x === c)); return; }
-      const f = e.target.closest('[data-f]'); if (!f) return; const k = f.dataset.f;
+      const f = e.target.closest('[data-f]'); if (!f) return; const k = f.dataset.f; let k2;
       if (k === 'undo') { F.anot.pop(); this.drawAnnotations(); this.showSession(); }
       else if (k === 'auto') {
         const cx = 500, cy = VH / 2; F.auto.forEach((q, i) => { if (F.anot.some((x) => x.auto === i)) return; const [x, y] = q.p; let dx = x - cx, dy = y - cy; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
@@ -330,7 +339,7 @@ class Scene {
           F.anot.push({ t: 'arrow', x1: x, y1: y, x2, y2, text: q.text, color: this.color, auto: i }); });
         this.drawAnnotations(); this.showSession(); }
       else if (k === 'close') this.closeAnnotator(true);
-      else { this.tool = k; el.querySelectorAll('.v3d-afer [data-f]').forEach((x) => x.classList.toggle('on', x.dataset.f === k)); svg.style.cursor = k === 'erase' ? 'not-allowed' : 'crosshair'; }
+      else { if (k === 'shape') k2 = this.shape; else k2 = k; this.tool = k2; el.querySelectorAll('.v3d-afer [data-f]').forEach((x) => x.classList.toggle('on', x.dataset.f === k || (x.dataset.f === 'shape' && SHAPES[k2]))); svg.style.cursor = k2 === 'erase' ? 'not-allowed' : 'crosshair'; }
     };
     const pt = (e) => { const r = svg.getBoundingClientRect(); return [Math.round((e.clientX - r.left) / r.width * VW), Math.round((e.clientY - r.top) / r.height * VH)]; };
     svg.style.cursor = this.tool === 'erase' ? 'not-allowed' : 'crosshair';
@@ -340,13 +349,13 @@ class Scene {
       const g = e.target.closest('[data-i]'); if (g && e.detail > 1) return;
       svg.setPointerCapture(e.pointerId); const color = this.color;
       if (this.tool === 'text') { const it = { t: 'text', x2: x, y2: y, text: '', color }; F.anot.push(it); this.editText(it, true); return; }
-      const it = this.tool === 'circ' ? { t: 'circ', x0: x, y0: y, x1: x, y1: y, color } : this.tool === 'pen' ? { t: 'pen', pts: [[x, y]], color } : { t: 'arrow', x1: x, y1: y, x2: x, y2: y, text: '', color };
+      const it = this.tool === 'circ' || this.tool === 'rect' ? { t: this.tool, x0: x, y0: y, x1: x, y1: y, color } : this.tool === 'pen' ? { t: 'pen', pts: [[x, y]], color } : { t: 'arrow', x1: x, y1: y, x2: x, y2: y, text: '', color };
       F.anot.push(it); this.drag = it; this.drawAnnotations();
     };
     svg.onpointermove = (e) => { const it = this.drag; if (!it) return; const [x, y] = pt(e);
-      if (it.t === 'circ') { it.x1 = x; it.y1 = y; } else if (it.t === 'pen') it.pts.push([x, y]); else { it.x2 = x; it.y2 = y; } this.drawAnnotations(); };
+      if (it.t === 'circ' || it.t === 'rect') { it.x1 = x; it.y1 = y; } else if (it.t === 'pen') it.pts.push([x, y]); else { it.x2 = x; it.y2 = y; } this.drawAnnotations(); };
     svg.onpointerup = () => { const it = this.drag; this.drag = null; if (!it) return;
-      if (it.t === 'circ' && Math.abs(it.x1 - it.x0) + Math.abs(it.y1 - it.y0) < 8) { F.anot.pop(); this.drawAnnotations(); return; }
+      if ((it.t === 'circ' || it.t === 'rect') && Math.abs(it.x1 - it.x0) + Math.abs(it.y1 - it.y0) < 8) { F.anot.pop(); this.drawAnnotations(); return; }
       if (it.t === 'arrow') { if (Math.hypot(it.x2 - it.x1, it.y2 - it.y1) < 15) { it.x2 = it.x1 + 120; it.y2 = it.y1 - 90; } this.drawAnnotations(); this.editText(it, true); return; }
       this.showSession(); };
     svg.ondblclick = (e) => { const g = e.target.closest('[data-i]'); if (!g) return; const it = F.anot[+g.dataset.i]; if (it.t === 'arrow' || it.t === 'text') this.editText(it, false); };
@@ -356,7 +365,9 @@ class Scene {
     const F = this.ses.shots[this.ses.current]; let n = 0;
     this.svg.innerHTML = F.anot.map((it, i) => {
       const c = it.color; let s = '';
-      if (it.t === 'circ') { const cx = (it.x0 + it.x1) / 2, cy = (it.y0 + it.y1) / 2, rx = Math.abs(it.x1 - it.x0) / 2, ry = Math.abs(it.y1 - it.y0) / 2;
+      if (it.t === 'rect') { const x0 = Math.min(it.x0, it.x1), y0 = Math.min(it.y0, it.y1), w = Math.abs(it.x1 - it.x0), h = Math.abs(it.y1 - it.y0);
+        s = `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="6" fill="none" stroke="transparent" stroke-width="22"/><rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="6" fill="none" stroke="${c}" stroke-width="5"/>`; }
+      else if (it.t === 'circ') { const cx = (it.x0 + it.x1) / 2, cy = (it.y0 + it.y1) / 2, rx = Math.abs(it.x1 - it.x0) / 2, ry = Math.abs(it.y1 - it.y0) / 2;
         s = `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="transparent" stroke-width="22"/><ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="${c}" stroke-width="5"/>`; }
       else if (it.t === 'pen') { const pts = it.pts.map((q) => q.join(',')).join(' '); s = `<polyline points="${pts}" fill="none" stroke="transparent" stroke-width="22"/><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`; }
       else {
@@ -384,7 +395,7 @@ class Scene {
     if (this.ses) this.ses.open = false; if (!keepSession) this.ses = this.ses && this.ses.shots.length ? this.ses : null;
     this.panel();
   }
-  annotationTexts(F) { let n = 0; const out = []; F.anot.forEach((it) => { if (it.t === 'circ') out.push({ kind: 'circle' }); else if (it.t === 'pen') out.push({ kind: 'stroke' }); else { if (it.text || it.t === 'text') n++; out.push({ kind: it.t === 'arrow' ? 'arrow' : 'text', n: it.text ? n : null, text: it.text || '' }); } }); return out; }
+  annotationTexts(F) { let n = 0; const out = []; F.anot.forEach((it) => { if (it.t === 'circ') out.push({ kind: 'circle' }); else if (it.t === 'rect') out.push({ kind: 'rectangle' }); else if (it.t === 'pen') out.push({ kind: 'stroke' }); else { if (it.text || it.t === 'text') n++; out.push({ kind: it.t === 'arrow' ? 'arrow' : 'text', n: it.text ? n : null, text: it.text || '' }); } }); return out; }
   showSession() {
     const el = this.$('.v3d-ses'); const S = this.ses; this.root.classList.toggle('v3d-annotating', !!S);
     if (!S) { el.innerHTML = ''; return; }
@@ -406,7 +417,8 @@ class Scene {
       const k = F.w / 1000; g.scale(k, k); g.lineCap = 'round'; g.lineJoin = 'round'; let n = 0;
       for (const it of F.anot) {
         g.strokeStyle = g.fillStyle = it.color; g.lineWidth = 5;
-        if (it.t === 'circ') { g.beginPath(); g.ellipse((it.x0 + it.x1) / 2, (it.y0 + it.y1) / 2, Math.abs(it.x1 - it.x0) / 2 || 1, Math.abs(it.y1 - it.y0) / 2 || 1, 0, 0, Math.PI * 2); g.stroke(); }
+        if (it.t === 'rect') { g.beginPath(); g.rect(Math.min(it.x0, it.x1), Math.min(it.y0, it.y1), Math.abs(it.x1 - it.x0), Math.abs(it.y1 - it.y0)); g.stroke(); }
+        else if (it.t === 'circ') { g.beginPath(); g.ellipse((it.x0 + it.x1) / 2, (it.y0 + it.y1) / 2, Math.abs(it.x1 - it.x0) / 2 || 1, Math.abs(it.y1 - it.y0) / 2 || 1, 0, 0, Math.PI * 2); g.stroke(); }
         else if (it.t === 'pen') { g.beginPath(); it.pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); }
         else {
           if (it.t === 'arrow') { g.beginPath(); g.moveTo(it.x2, it.y2); g.lineTo(it.x1, it.y1); g.stroke(); const h = arrowHead(it.x1, it.y1, it.x2, it.y2); g.beginPath(); g.moveTo(...h[0]); g.lineTo(...h[1]); g.lineTo(...h[2]); g.closePath(); g.fill(); }
