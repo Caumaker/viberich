@@ -101,6 +101,10 @@ Start with managed Postgres: it fits the joins and reports this app needs.
 
 Put the list right under a `### heading`: the heading becomes the question title in the card and in what Claude receives (`D1: Which database do we start with? → SQLite on the app server`). See [examples/demo.md](examples/demo.md) for a full document with a chart and a diagram, and [examples/demo-stage-2.md](examples/demo-stage-2.md) for the stage the demo adds after it (`viberich stage demo @examples/demo-stage-2.md`).
 
+## The sidebar is a chat
+
+Threads read like a chat: the oldest at the top, the newest at the bottom, and the sidebar scrolls down by itself when a message arrives. Resolved threads move to the top as history. A box pinned at the bottom lets you write to Claude about the tab you are on without selecting anything; `pending` shows it as `where: general chat of tab N`.
+
 ## 3D scenes
 
 A ` ```scene3d ` block turns a glTF/GLB model into an explorable scene inside the document, so a design can be explained, questioned and improved in the same thread-and-version flow as the text.
