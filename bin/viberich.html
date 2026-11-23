@@ -307,8 +307,10 @@ const TAB_KEY='viberich-tab-'+SLUG,NSTAGES_KEY='viberich-nstages-'+SLUG,SEEN_KEY
 function nStages(){return (DOC.stages||[]).length}
 // the first visit, and every new stage, opens the newest tab
 function checkTabs(){let before=-1;try{before=Number(localStorage.getItem(NSTAGES_KEY)??-1)}catch(e){}const n=nStages();
-  if(n>before)TAB=n;if(TAB>n)TAB=n;try{localStorage.setItem(NSTAGES_KEY,String(n));localStorage.setItem(TAB_KEY,String(TAB))}catch(e){}}
-function goToTab(i){TAB=i;try{localStorage.setItem(TAB_KEY,String(i))}catch(e){};draw([]);scrollTo({top:0,behavior:'smooth'})}
+  if(n>before)TAB=n;if(!TAB_URL_USED){TAB_URL_USED=true;const q=Number(new URLSearchParams(location.search).get('stage'));if(q>=1)TAB=q-1}if(TAB>n)TAB=n;if(TAB<0)TAB=0;try{localStorage.setItem(NSTAGES_KEY,String(n));localStorage.setItem(TAB_KEY,String(TAB))}catch(e){}tabInUrl()}
+// ?stage=N opens tab N (1 = the first); switching tabs keeps the address in step, so a link points at a stage
+let TAB_URL_USED=false;function tabInUrl(){if(!nStages())return;try{const u=new URL(location.href);if(u.searchParams.get('stage')!==String(TAB+1)){u.searchParams.set('stage',String(TAB+1));history.replaceState(history.state,'',u.pathname+u.search+u.hash)}}catch(e){}}
+function goToTab(i){TAB=i;try{localStorage.setItem(TAB_KEY,String(i))}catch(e){};tabInUrl();draw([]);scrollTo({top:0,behavior:'smooth'})}
 function isQueued(id){return readQueue().some(x=>x.u==='/choose'&&x.b.block===id)}
 function openChoicesOf(r){return DOC.blocks.filter(b=>b.r===r&&b.type==='choice'&&!CHOICES[b.id]&&!isQueued(b.id))}
 // threads whose last message is from Claude: the user owes an answer

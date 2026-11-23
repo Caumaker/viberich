@@ -171,7 +171,7 @@ The MCP server (`viberich-mcp`) exposes `publish`, `open`, `wait`, `pending`, `r
 2. **Wait.** Claude keeps `viberich wait` running in the background (or calls the MCP tool `wait` in a loop). It returns a few seconds after your first comment or tick, so a burst of comments arrives together.
 3. **Read.** `viberich pending` lists every thread waiting for Claude: the selected passage, your request, the message you quoted, pasted images and the current text of the block. `viberich choices <slug>` shows what you ticked in each question.
 4. **Answer and edit.** `viberich reply` answers in the thread. When you ask for a change, `viberich edit <slug> <block> @new.md --comment <id>` creates a new version of the block, flashes it on your screen and notes the change in the thread.
-5. **Next stage.** When the work moves on (the plan is agreed, now the migration steps), Claude runs `viberich stage <slug> @next.md` instead of publishing a new document. You get a new tab; anything still open from before is waiting at the top of it.
+5. **Next stage.** When the work moves on (the plan is agreed, now the migration steps), Claude runs `viberich stage <slug> @next.md` instead of publishing a new document. You get a new tab; anything still open from before is waiting at the top of it. The address carries the tab (`?stage=4` opens the fourth), so Claude can open the page straight on the new stage and a link can point at one.
 6. **Repeat** until you resolve the threads. Claude never resolves a thread itself.
 
 The skill in [skill/SKILL.md](skill/SKILL.md) spells this loop out for Claude.
