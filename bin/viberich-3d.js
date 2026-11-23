@@ -71,7 +71,14 @@ class Scene {
     const dl2 = new THREE.DirectionalLight(0xffffff, 0.8); dl2.position.set(-4, 3, -3); this.scene.add(dl2);
     new ResizeObserver(() => this.resize()).observe(this.$('.v3d-view'));
     new IntersectionObserver((es) => { this.visible = es[0].isIntersecting; }).observe(this.root);
-    cv.addEventListener('pointerdown', (e) => { this.p0 = [e.clientX, e.clientY]; });
+    cv.tabIndex = 0; cv.addEventListener('pointerdown', (e) => { this.p0 = [e.clientX, e.clientY]; cv.focus({ preventScroll: true }); });
+    cv.addEventListener('keydown', (e) => { const k = e.key.toLowerCase();
+      if (k === 'escape') { this.picks = []; this.sel = null; this.measureMode = false; this.measureP = null; this.panel(); this.paint(); }
+      else if (k === 'i' && this.picks.length) this.action('isolatePicks');
+      else if (k === 'f') this.frame(this.picks.length ? this.picks.map((x) => x.m) : this.meshes.filter((m) => m.visible));
+      else if (k === 'h' && this.picks.length) { (this.hiddenSet = this.hiddenSet || new Set()); this.picks.forEach((x) => this.hiddenSet.add(x.m)); this.picks = []; this.sel = null; this.visib(); this.panel(); }
+      else if (k === 'a' && !e.metaKey) this.action('showall');
+      else return; e.preventDefault(); });
     cv.addEventListener('pointerup', (e) => { if (this.p0 && Math.hypot(e.clientX - this.p0[0], e.clientY - this.p0[1]) < 5) this.pick(e); });
     cv.addEventListener('pointermove', (e) => { if (!this.pickMode || e.buttons) return; const t = performance.now(); if (t - (this.tHover || 0) < 50) return; this.tHover = t; this.onHover(e); });
     cv.addEventListener('pointerleave', () => { this.hover = null; this.$('.v3d-hover').style.display = 'none'; this.paint(); });
@@ -113,10 +120,11 @@ class Scene {
     if (cam) { pos = mmV(cam.pos); target = mmV(cam.target); } else { target = this.center.clone(); pos = this.center.clone().add(new THREE.Vector3(1.1, 0.75, 1.3).normalize().multiplyScalar(this.radius * 2.6)); }
     if (!this.isolated) this.tw = { t0: performance.now(), d: ja ? 0 : this.dur * 1000, c0: this.cam.position.clone(), a0: this.ctl.target.clone(), c1: pos, a1: target };
     const hl = new Set(); (p.highlight || []).forEach((k2) => this.meshesOf(k2).forEach((m) => hl.add(m))); this.hl = hl;
+    this.stepIsolate = p.isolate ? new Set(p.isolate.flatMap((k2) => [...this.meshesOf(k2)])) : null;
     this.hidden = new Set(); [...(this.cfg.hide || []), ...(p.hide || [])].forEach((k2) => this.meshesOf(k2).forEach((m) => this.hidden.add(m)));
     const colors = {}; Object.entries(p.color || {}).forEach(([k2, c]) => this.meshesOf(k2).forEach((m) => (colors[m.uuid] = c)));
     this.meshes.forEach((m) => {
-      const ghosted = hl.size && !hl.has(m) && !this.isolated;
+      const ghosted = hl.size && !hl.has(m) && !this.isolated && !this.stepIsolate;
       const tr = ghosted || m.userData.op0 < 1; if (m.material.transparent !== tr) { m.material.transparent = tr; m.material.needsUpdate = true; } m.material.opacity = ghosted ? (p.ghost ?? 0.1) : m.userData.op0; m.material.depthWrite = !ghosted;
       m.material.color.copy(colors[m.uuid] ? new THREE.Color(colors[m.uuid]) : m.userData.color0);
     });
@@ -125,9 +133,11 @@ class Scene {
     Object.entries(p.move || {}).forEach(([k2, d]) => this.find(k2).forEach((n) => n.userData.movTarget.copy(mmD(d))));
     this.osc = Object.entries(p.vibrate || {}).flatMap(([k2, o]) => this.find(k2).map((n) => ({ n, dir: mmD(o.axis || [0, 0, 1]).normalize(), amp: (o.amp ?? 2) / 1000, hz: o.hz ?? 3 })));
     this.targetExp = p.explode ?? 0; this.$('[data-a=exp]').value = Math.round(this.targetExp * 100);
+    if (p.section) { this.section = { inv: false, ...p.section }; this.stepSection = true; this.applySection(); } else if (this.stepSection) { this.section = null; this.stepSection = false; this.applySection(); }
+    (this.stepMeasures || []).forEach((x) => this.scene.remove(x.obj)); this.stepMeasures = (p.measures || []).map((m) => ({ ...this.makeMeasure(mmV(m.from), mmV(m.to)), label: m.label }));
     this.panel(); this.points();
   }
-  visib() { this.meshes.forEach((m) => { m.visible = this.isolated ? this.isolated.has(m) : !this.hidden.has(m) && !(this.hiddenSet && this.hiddenSet.has(m)); }); this.paint(); }
+  visib() { const isolate = this.stepIsolate && !this.isolated ? this.stepIsolate : this.isolated; this.meshes.forEach((m) => { m.visible = isolate ? isolate.has(m) : !this.hidden.has(m) && !(this.hiddenSet && this.hiddenSet.has(m)); }); this.paint(); }
   paint() {
     if (!this.meshes) return; const pin = new Set(this.picks.map((x) => x.m)); const p = this.steps[this.step];
     this.meshes.forEach((m) => { if (!m.material.emissive) return;
@@ -171,7 +181,7 @@ class Scene {
     const med = this.measures.length ? `<div class="v3d-eh2">Measures (${this.measures.length})</div>${this.measures.map((x, i) => `<div class="v3d-pm">M${i + 1}: <b>${x.dist} mm</b> (dx ${x.d[0]}, dy ${x.d[1]}, dz ${x.d[2]})</div>`).join('')}<div class="v3d-actions"><button data-a="clearMeasures">Delete measures</button></div>` : '';
     if (!this.picks.length && !this.pickMode) { el.innerHTML = med; return; }
     el.innerHTML = `<div class="v3d-eh2">Picked parts (${this.picks.length})</div>
-      ${this.picks.length ? '' : '<div class="v3d-hint">Hover to see the exact name, click to pick. Click again to release.</div>'}
+      <div class="v3d-hint">Click selects · <b>Shift</b>+click adds · <b>Alt</b>+click removes · keys <b>I</b> isolate · <b>F</b> frame · <b>H</b> hide · <b>A</b> show all · <b>Esc</b> clear</div>
       <div class="v3d-plist">${this.picks.map((x, i) => `<div class="v3d-pi"><span class="v3d-pdot"></span><div><b>${esc(x.name)}</b><small>${esc(x.path)}</small></div><button data-a="release" data-i="${i}" title="Release">×</button></div>`).join('')}</div>
       ${this.picks.length ? `<div class="v3d-actions"><button data-a="annotate" class="pri">✎ Annotate</button><button data-a="askPicks">Comment</button><button data-a="isolatePicks">${this.isolated ? 'Show all' : 'Isolate'}</button><button data-a="frameBtn">Frame</button><button data-a="clearPicks">Release all</button></div>` : ''}${med}`;
   }
@@ -193,9 +203,13 @@ class Scene {
       return;
     }
     if (this.measureMode) { if (hit) this.addMeasure(hit.point.clone()); return; }
-    if (this.pickMode) { if (hit) this.togglePick(this.ident(hit.object, toMm(hit.point))); return; }
-    this.sel = hit ? this.ident(hit.object, toMm(hit.point)) : null;
-    this.paint(); this.showPart();
+    const id = hit ? this.ident(hit.object, toMm(hit.point)) : null; const has = id && this.picks.findIndex((x) => x.m === id.m);
+    if (e.altKey) { if (id && has >= 0) this.picks.splice(has, 1); if (this.sel && id && this.sel.m === id.m) this.sel = this.picks.at(-1) || null; }
+    else if (e.shiftKey || e.metaKey || e.ctrlKey) { if (id && has < 0) this.picks.push(id); if (id) this.sel = id; }
+    else if (this.pickMode) { if (id) { if (has >= 0) this.picks.splice(has, 1); else this.picks.push(id); } this.sel = id && has < 0 ? id : this.sel; }
+    else { this.picks = id ? [id] : []; this.sel = id; }
+    if (this.isolated) { this.isolated = this.picks.length ? new Set(this.picks.map((x) => x.m)) : null; this.visib(); }
+    this.paint(); this.showPart(); this.showPicks();
   }
   camMm() { return { pos: toMm(this.cam.position), target: toMm(this.ctl.target) }; }
   frame(ms) {
@@ -264,15 +278,18 @@ class Scene {
   }
   addMeasure(p) {
     if (!this.measureP) { this.measureP = p; this.sectionBar(); return; }
-    const a = this.measureP, b = p; this.measureP = null;
+    const a = this.measureP; this.measureP = null; this.measures.push(this.makeMeasure(a, p));
+    this.sectionBar(); this.points(); this.showPicks();
+  }
+  makeMeasure(a, b) {
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
     const obj = new THREE.Group();
     const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xe0262b, depthTest: false })); ln.renderOrder = 999;
     const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xe0262b, size: 9, sizeAttenuation: false, depthTest: false })); pts.renderOrder = 999;
     obj.add(ln, pts); this.scene.add(obj);
-    const A = toMm(a), B = toMm(b), d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
-    this.measures.push({ obj, a: A, b: B, dist: Math.round(Math.hypot(...d)), d });
-    this.sectionBar(); this.points(); this.showPicks();
+    const A = [a.x * 1000, -a.z * 1000, a.y * 1000].map((v) => Math.round(v * 10) / 10), B = [b.x * 1000, -b.z * 1000, b.y * 1000].map((v) => Math.round(v * 10) / 10);
+    const d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]].map((v) => Math.round(v * 10) / 10);
+    return { obj, a: A, b: B, dist: Math.round(Math.hypot(...d) * 10) / 10, d };
   }
   sceneData() {
     const p = this.steps[this.step]; const pz = this.picks.length ? this.picks : this.sel ? [this.sel] : [];
@@ -417,8 +434,9 @@ class Scene {
   points() {
     const C = API.threads().filter((c) => c.block === this.block && c.segments.some((s) => s.scene && s.scene.point));
     this.pins = [
-      ...(this.cfg.notes || []).filter((n) => n.step == null || n.step === this.step).map((n, i) => ({ p: mmV(n.point), html: `<span class="nt">${i + 1}</span><span class="tx">${esc(n.text)}</span>`, cls: 'note' })),
+      ...(this.cfg.notes || []).filter((n) => n.step == null || n.step === this.step).map((n, i) => ({ p: mmV(n.point), html: `<span class="nt">${i + 1}</span><span class="tx">${esc(n.text)}</span>`, cls: 'note' + (n.pinned ? ' open' : '') })),
       ...this.measures.map((x, i) => ({ p: mmV([(x.a[0] + x.b[0]) / 2, (x.a[1] + x.b[1]) / 2, (x.a[2] + x.b[2]) / 2]), html: `<span class="tx mm">M${i + 1} · ${x.dist} mm</span>`, cls: 'med' })),
+      ...(this.stepMeasures || []).map((x) => ({ p: mmV([(x.a[0] + x.b[0]) / 2, (x.a[1] + x.b[1]) / 2, (x.a[2] + x.b[2]) / 2]), html: `<span class="tx mm">${esc(x.label || x.dist + ' mm')}</span>`, cls: 'med' })),
       ...C.map((c) => { const s = c.segments.find((x) => x.scene && x.scene.point).scene; return { p: mmV(s.point), html: `<span class="nt">${s.kind === 'annotation' ? '✎' : '?'}</span><span class="tx">${esc(c.first).slice(0, 90)}</span>`, cls: 'comment' + (c.answered ? ' resp' : ''), thread: c.id }; }),
     ];
     const box = this.$('.v3d-labels'); box.innerHTML = this.pins.map((r, i) => `<div class="v3d-r ${r.cls}" data-i="${i}">${r.html}</div>`).join('');
@@ -478,3 +496,4 @@ window.scenes3d = function () {
 window.goToScene = function (thread) { const c = API.threads().find((x) => x.id === thread); const v = c && VIEWS.get(c.block); if (v) v.focusComment(thread); };
 window.whereV3D = function (n) { const r = n.closest && n.closest('.v3d'); if (!r) return null; const v = [...VIEWS.values()].find((x) => x.root === r); return v ? v.whereOf(n) : null; };
 window.scenes3d();
+window.__v3dViews = VIEWS;

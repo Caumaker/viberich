@@ -1,6 +1,6 @@
 {
   "name": "viberich",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Rich interaction UI for vibe coding with Claude Code: comment on passages, tick choices, approve decisions and let Claude answer and edit, live, in a local page.",
   "license": "MIT",
   "bin": { "viberich": "bin/viberich", "viberich-mcp": "bin/viberich-mcp" },
