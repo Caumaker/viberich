@@ -44,6 +44,9 @@ When the work moves on to its next step (the options are decided, now the plan; 
 
 It becomes a new tab, and the page opens it. Questions the user has not answered yet and threads where you are waiting for the user reappear at the top of the new tab, so nothing open gets lost. Start the stage with a `## ` heading (it becomes the tab title) and one sentence with what changed. `viberich insert` after a block of a stage keeps the new block in that stage.
 
+## 3D scenes for mechanical or spatial work
+When the subject is a machine, a part or anything spatial, add a ```scene3d block (see the README) and `viberich model <slug> <file.glb>`. Write each step's text and each part's explanation from real sources (drawings, calculations), and say when a motion is only illustrative. A comment made on the model reaches `pending` with a `3D:` line (part, point in mm, step, camera): answer in the thread as usual, and when the scene itself must change, edit the whole block with `viberich edit`.
+
 ## Writing the markdown
 
 - First line `# Title`, then one sentence with the conclusion.

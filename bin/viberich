@@ -6,7 +6,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const ROOT = process.env.VIBERICH_DIR || path.join(os.homedir(), '.viberich', 'docs');
 const PORT = Number(process.env.VIBERICH_PORT) || 7743;
 const HOME = os.homedir();
@@ -28,12 +28,19 @@ const USAGE = `viberich ${VERSION}: rich interaction UI for vibe coding with Cla
   viberich reply <commentId> <@file|text> [--quote <messageId>]                     answer in a comment thread
   viberich resolve <commentId>                  mark a thread as resolved
   viberich wait [seconds]                       return when a new comment or choice arrives (default 3500)
+  viberich model <slug> <file.glb|.gltf> [name] add a 3D model to the document for a \`\`\`scene3d block
 
 Choices: a list right under a "### question" heading becomes a card the user ticks.
   - ( ) option     single choice (radio)      - (*) pre-selected
   - [ ] option     multiple choice (checkbox) - [x] pre-selected
   - {off} option   on/off switch              - {on} pre-selected
 Every tick reaches the question's thread as a message from the user: it shows in pending and wakes up wait.
+
+3D scenes: a \`\`\`scene3d block holds JSON (mm, Z up, as in CAD): {"title","model","hide":[keys],"parts":{MARK:{label,text}},
+  "notes":[{point,text,step}],"steps":[{title,text,camera:{pos,target},highlight:[keys],hide,color:{key:"#hex"},
+  move:{key:[dx,dy,dz]},vibrate:{key:{axis,amp,hz}},explode:0..1,dur,hold}]}. A key matches a node name or its prefix
+  (before "_", ":" or a space). The user tours the steps, clicks a part to read its text and comment on it (the thread
+  keeps part, point, step and camera, shown by pending) and edits the scene in the page (a new block version).
 
 Documents are stored in VIBERICH_DIR (now: ${ROOT}).`;
 
@@ -89,6 +96,7 @@ function split(md) {
 function render(md) {
   const L = md.split('\n'); const first = L[0]; let m;
   if (first.startsWith('```chart')) return { type: 'chart', html: `<div class="fig chart"><canvas data-chart='${esc(L.slice(1, -1).join('\n')).replace(/'/g, '&#39;')}'></canvas></div>` };
+  if (first.startsWith('```scene3d')) return { type: 'scene3d', html: `<div class="scene3d" contenteditable="false" data-scene="${esc(L.slice(1, -1).join('\n')).replace(/"/g, '&quot;')}"></div>` };
   if (first.startsWith('```mermaid')) return { type: 'mermaid', html: `<div class="fig"><pre class="mermaid">${esc(L.slice(1, -1).join('\n'))}</pre></div>` };
   if (first.startsWith('```')) return { type: 'code', html: `<pre class="fig" style="white-space:pre-wrap">${esc(L.slice(1, -1).join('\n'))}</pre>` };
   if (first.startsWith('<')) return { type: 'fig', html: md };
@@ -292,6 +300,11 @@ function serve(port) {
       openWithOS(f, !fs.statSync(f).isDirectory());
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
     }
+    if (p[0] === '__3d.js') { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' }); return res.end(fs.readFileSync(path.join(__dirname, 'viberich-3d.js'))); }
+    if (p[0] === 'm' && slugs().includes(p[1]) && /^[\w.-]+$/.test(decodeURIComponent(p[2] || ''))) { // 3D models of a document
+      const f = path.join(docDir(p[1]), 'models', decodeURIComponent(p[2]));
+      if (fs.existsSync(f)) { const T = { '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.png': 'image/png', '.jpg': 'image/jpeg' }; res.writeHead(200, { 'content-type': T[path.extname(f).toLowerCase()] || 'application/octet-stream', 'content-length': fs.statSync(f).size }); return fs.createReadStream(f).pipe(res); }
+    }
     if (p[0] === 'view') return viewFile(res, resolveHomePath(u.searchParams.get('p'))); // read-only, inside home, never secrets
     if (p[0] === 'attachments' && slugs().includes(p[1]) && /^[\w.-]+$/.test(p[2] || '')) {
       const f = path.join(docDir(p[1]), 'attachments', p[2]);
@@ -375,7 +388,8 @@ else if (cmd === 'publish') {
         const m = t && (t.messages.find((z) => z.id === last.quote.msg) || t.messages[Number(last.quote.msg)]);
         if (m) quoted = `  quoting (${m.author === 'user' ? 'the user' : 'you'}): ${String(m.text).slice(0, 200)}\n`;
       }
-      const images = x.messages.filter((m) => m.author === 'user').flatMap((m) => m.attachments || []).map((att) => '  image: ' + att.path + '\n').join('');
+      const images = x.messages.filter((m) => m.author === 'user').flatMap((m) => m.attachments || []).map((att) => '  image: ' + att.path + '\n').join('')
+        + (x.segments || []).filter((g) => g.scene).map((g) => `  3D: part ${g.scene.part}${g.scene.assembly ? ' (' + g.scene.assembly + ')' : ''}, step ${g.scene.step} "${g.scene.stepTitle || ''}", point ${JSON.stringify(g.scene.point)} mm, camera ${JSON.stringify(g.scene.camera)}\n`).join('');
       const blockText = blk ? latest(blk).md.split('\n').map((l) => '    ' + l).join('\n') : '';
       console.log(`[${s}] comment=${x.id} block=${x.block} (v${blk ? latest(blk).v : '?'})\n  selection: ${x.selection || '(whole block)'}\n  request: ${last.text}\n${quoted}${images}  current block text:\n${blockText}\n`);
     }
@@ -388,6 +402,11 @@ else if (cmd === 'publish') {
     if (x) { x.messages.push({ id: newId('m'), author: 'claude', text: text.trim(), quote: opt('quote') ? { thread: x.id, msg: opt('quote') } : null, at: now() }); writeComments(s, C); console.log('replied'); process.exit(0); }
   }
   fail('comment not found');
+} else if (cmd === 'model') { // copies a glTF/GLB model into the document for ```scene3d blocks
+  needDoc(a); const src = args[2]; if (!src || !fs.existsSync(src) || !/\.(glb|gltf)$/i.test(src)) fail('usage: viberich model <slug> <file.glb|file.gltf> [name]');
+  const name = (args[3] || path.basename(src)).replace(/[^\w.-]/g, '_'); const dst = path.join(docDir(a), 'models'); fs.mkdirSync(dst, { recursive: true });
+  fs.copyFileSync(src, path.join(dst, name));
+  console.log(`model: ${name} (${(fs.statSync(path.join(dst, name)).size / 1e6).toFixed(1)} MB). In the block: "model": "${name}"`);
 } else if (cmd === 'choices') {
   const d = needDoc(a); const CH = readChoices(a); let n = 0;
   for (const blk of d.blocks.filter((x) => !x.hidden)) {

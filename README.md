@@ -101,6 +101,22 @@ Start with managed Postgres: it fits the joins and reports this app needs.
 
 Put the list right under a `### heading`: the heading becomes the question title in the card and in what Claude receives (`D1: Which database do we start with? → SQLite on the app server`). See [examples/demo.md](examples/demo.md) for a full document with a chart and a diagram, and [examples/demo-stage-2.md](examples/demo-stage-2.md) for the stage the demo adds after it (`viberich stage demo @examples/demo-stage-2.md`).
 
+## 3D scenes
+
+A ` ```scene3d ` block turns a glTF/GLB model into an explorable scene inside the document, so a design can be explained, questioned and improved in the same thread-and-version flow as the text.
+
+- **Tour**: steps with title and text, camera moves, highlighted parts (the rest turns into a ghost), parts that move or vibrate, and an explode slider.
+- **Explanations**: click a part to read what it is (`parts` in the JSON, matched by name).
+- **Questions on the model**: *Comment / ask* opens a normal thread pinned to the part. `viberich pending` shows the part, the clicked point, the step and the camera, so Claude knows exactly what you looked at.
+- **Editor**: save the current view to a step, add steps and notes, highlight parts, write explanations, then *Save version*: a new version of the block, with history like any other block.
+
+```bash
+viberich publish table3d examples/scene3d/table.md
+viberich model table3d examples/scene3d/table.glb
+```
+
+The JSON uses millimetres with Z up (CAD convention): `title`, `model`, `hide`, `parts {MARK: {label, text}}`, `notes [{point, text, step}]`, `steps [{title, text, camera {pos, target}, highlight, hide, color, move {key: [dx, dy, dz]}, vibrate {key: {axis, amp, hz}}, explode, dur, hold}]`. A key matches a node name, or its prefix before `_`, `:` or a space. three.js loads from jsDelivr, like Chart.js and Mermaid.
+
 ## Keyboard
 
 | Keys | What they do |
